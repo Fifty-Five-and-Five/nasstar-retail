@@ -4,21 +4,39 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Returns Processor</title>
+<link rel="icon" type="image/svg+xml" href="parcels/plain.svg">
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #0a0f1a;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  font-family: 'Courier New', monospace;
+:root {
+  color-scheme: light;
+  --page-bg: #f4f1ea;
+  --panel-bg: rgba(255,255,255,0.72);
+  --panel-border: rgba(25, 31, 38, 0.10);
+  --frame-shadow: 0 28px 80px rgba(25, 31, 38, 0.16);
+  --ink: #1d232b;
+  --muted: #6f7985;
 }
-canvas {
+body {
+  min-height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(255,255,255,0.8), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(64, 154, 173, 0.10), transparent 28%),
+    linear-gradient(180deg, #f8f5ef 0%, var(--page-bg) 100%);
+  font-family: 'Outfit', sans-serif;
+  color: var(--ink);
+}
+#gc {
   display: block;
-  border: 2px solid #223;
-  image-rendering: pixelated;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+@media (max-width: 900px) {
+  #gc { width: 100vw; height: 100vh; }
 }
 </style>
 </head>
@@ -50,16 +68,17 @@ const AB_END_X  = 750;   // left end of A/B
 
 // C bridge: short square belt that moves between AY and BY,
 // bridging A or B belt to the fixed merger arm on that side
+const MERGE_X   = 600;
+const ARM_START_X = 658;          // fixed visible arm entry
 const C_LEN     = 50;
-const C_R_X     = 722;             // right end of C  (28 px gap from AB_END_X)
-const C_L_X     = C_R_X - C_LEN;  // left end of C  (672)
-const C_L_GAP   = 14;              // gap between arm right ends and C left end
+const C_R_X     = 729;            // right end of C  (21 px gap from AB_END_X)
+const C_L_X     = C_R_X - C_LEN;  // left end of C  (679)
+const C_L_GAP   = C_L_X - ARM_START_X;
 
 // Fixed merger arms: L-shaped belts with rounded corners
 // Top arm: (C_L_X, AY) → right-angle at (MERGE_X, AY) → (MERGE_X, DY)
 // Bot arm: (C_L_X, BY) → right-angle at (MERGE_X, BY) → (MERGE_X, DY)
-const MERGE_X   = 600;
-const ARM_H_LEN = C_L_X - MERGE_X;          // horizontal leg = 72 px
+const ARM_H_LEN = ARM_START_X - MERGE_X;    // horizontal leg starts at visible arm entry
 const ARM_V_LEN = DY - AY;                  // vertical leg   = 160 px  (same for B)
 const ARM_LEN   = ARM_H_LEN + ARM_V_LEN;    // total path length = 232 px
 
@@ -119,46 +138,48 @@ const HINT_LIMIT = 5;
 // ═══════════════════════════════════════════════════════════
 
 const CLR = {
-  // ── Floor ────────────────────────────────────────────────
-  bg:        '#bfc4cc',   // light concrete
-  floorGrid: 'rgba(0,0,0,0.055)',
+  bg:        '#ece6dc',
+  bgSoft:    '#f6f2ea',
+  floorGrid: 'rgba(29,35,43,0.04)',
+  structure: '#27303a',
+  structure2:'#4e5864',
+  track:     '#313b45',
+  trackSoft: '#87909a',
+  beltA:     '#313b45',
+  beltB:     '#313b45',
+  beltC:     '#3a4652',
+  beltD:     '#202933',
+  tunnelBg:  '#e1d8cb',
+  pkgA:      '#3f99ad',
+  pkgB:      '#3f99ad',
+  G:         '#3f99ad',
+  H:         '#5d9d74',
+  I:         '#cb6a5c',
+  beltG:     '#3f99ad',
+  beltH:     '#cb6a5c',
+  beltI:     '#5d9d74',
+  pivot:     '#202933',
+  pivotSide: 'rgba(32,41,51,0.16)',
+  pivotRim:  '#f4f1ea',
+  text:      '#182028',
+  dimText:   '#6e7680',
+  gap:       '#ece6dc',
+  warn:      '#cb6a5c',
+  hintHL:    '#b9862f',
+  hintBg:    'rgba(185,134,47,0.12)',
+  hudBg:     'rgba(255,255,255,0.78)',
+  hudLine:   'rgba(29,35,43,0.08)',
+  flash:     'rgba(203,106,92,0.16)',
+  correct:   'rgba(93,157,116,0.14)',
+  overlay:   'rgba(244,241,234,0.84)',
+};
 
-  // ── Belt surfaces ────────────────────────────────────────
-  beltA:     '#306898',   // store returns — steel blue
-  beltB:     '#8c4a0c',   // online returns — amber
-  beltC:     '#485868',   // switch / conveyor — steel grey
-  beltD:     '#22262e',   // processor tunnel — dark steel
-  tunnelBg:  '#12141a',
-
-  // ── Package faces ────────────────────────────────────────
-  pkgA:      '#4e8ec0',   // steel blue — matches belt A (store returns)
-  pkgB:      '#c86018',   // amber-orange — matches belt B (online returns)
-
-  // ── Exit destination colours ─────────────────────────────
-  G:         '#4ab8ea',   // Restock  — sky blue
-  H:         '#44cc70',   // Repair   — green
-  I:         '#e85555',   // Recycle  — red
-  beltG:     '#1a4e66',
-  beltH:     '#1a5030',
-  beltI:     '#602222',
-
-  // ── Pivot E — factory yellow ─────────────────────────────
-  pivot:     '#c89800',
-  pivotSide: '#7a5c00',
-  pivotRim:  '#f0c400',
-
-  // ── Text ─────────────────────────────────────────────────
-  text:      '#d8e4f0',   // light text for HUD (dark bar)
-  dimText:   '#4a5a6a',   // labels on field (dark enough on concrete)
-
-  // ── UI ───────────────────────────────────────────────────
-  gap:       '#bfc4cc',   // matches bg
-  warn:      '#ff2222',
-  hintHL:    '#f0a000',
-  hintBg:    'rgba(240,160,0,0.20)',
-  hudBg:     'rgba(8,12,22,0.94)',
-  flash:     'rgba(255,50,50,0.35)',
-  correct:   'rgba(60,220,100,0.22)',
+const UI = {
+  panelR: 24,
+  cardR: 20,
+  trackW: 30,
+  branchW: 24,
+  lineW: 2,
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -179,6 +200,7 @@ function rand() {
 // ═══════════════════════════════════════════════════════════
 
 let G;
+const HIGH_SCORE_KEY = 'nasstarHighScore';
 
 function initState() {
   G = {
@@ -186,6 +208,7 @@ function initState() {
     paused:  false,
     lives:   3,
     score:   0,
+    bestScore: readHighScore(),
     time:    0,
 
     // Controls
@@ -217,11 +240,42 @@ function initState() {
 
     // Visual effects
     lifeFlash:   0,
+    lifeLostIndex: -1,
+    lifeNoticeT: 0,
+    lifeNoticeText: '',
     scoreFlash:  0,
-    flashMsg:    '',
+
+    // Presentation state
+    cBridgeY:    AY,
+    cBridgeTargetY: AY,
+    pivotAngle:  -Math.PI / 2,
+    pivotTargetAngle: -Math.PI / 2,
 
     uid: 1,
   };
+}
+
+function readHighScore() {
+  try {
+    const raw = window.localStorage.getItem(HIGH_SCORE_KEY);
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeHighScore(score) {
+  try {
+    window.localStorage.setItem(HIGH_SCORE_KEY, String(score));
+  } catch {}
+}
+
+function commitHighScore(score) {
+  if (score > G.bestScore) {
+    G.bestScore = score;
+    writeHighScore(score);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -230,13 +284,30 @@ function initState() {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function easeInOut(t) { return t * t * (3 - 2 * t); }
+function smoothTo(current, target, rate, dt) {
+  return lerp(current, target, 1 - Math.exp(-rate * dt));
+}
+function angleForPivot(pivot) {
+  if (pivot === 'G') return -Math.PI / 2;
+  if (pivot === 'H') return Math.PI;
+  return Math.PI / 2;
+}
+function shortestAngleDelta(from, to) {
+  let delta = (to - from + Math.PI) % (Math.PI * 2);
+  if (delta < 0) delta += Math.PI * 2;
+  return delta - Math.PI;
+}
+function smoothAngle(current, target, rate, dt) {
+  return current + shortestAngleDelta(current, target) * (1 - Math.exp(-rate * dt));
+}
 
 // Position along L-shaped merger arm (t = 0→1): horizontal then vertical
 function getArmPoint(src, t) {
   const fromY = src === 'A' ? AY : BY;
   const tH = ARM_H_LEN / ARM_LEN;   // fraction of path that is horizontal
   if (t <= tH) {
-    return { x: lerp(C_L_X, MERGE_X, t / tH), y: fromY };
+    return { x: lerp(ARM_START_X, MERGE_X, t / tH), y: fromY };
   } else {
     return { x: MERGE_X, y: lerp(fromY, DY, (t - tH) / (1 - tH)) };
   }
@@ -270,10 +341,27 @@ function chooseType() {
 }
 
 const TYPE_META = {
-  Restock: { exit: 'G', color: CLR.G },
-  Repair:  { exit: 'H', color: CLR.H },
-  Recycle: { exit: 'I', color: CLR.I },
+  Restock: { exit: 'G', color: CLR.G, shape: 'circle' },
+  Repair:  { exit: 'H', color: CLR.I, shape: 'square' },
+  Recycle: { exit: 'I', color: CLR.H, shape: 'triangle' },
 };
+
+const PARCEL_ASSET_PATHS = {
+  plain: 'parcels/plain.svg',
+  Restock: 'parcels/restock.svg',
+  Repair: 'parcels/repair.svg',
+  Recycle: 'parcels/recycle.svg',
+};
+
+const PARCEL_IMAGES = {};
+for (const [key, src] of Object.entries(PARCEL_ASSET_PATHS)) {
+  const img = new Image();
+  img.src = src;
+  PARCEL_IMAGES[key] = img;
+}
+
+const TITLE_LOGO = new Image();
+TITLE_LOGO.src = 'parcels/return-logo.svg';
 
 function scheduleSpawn() {
   const avg = spawnAvg();
@@ -295,10 +383,24 @@ function doSpawn() {
     onC:    false,
     onArm:  false,
     onPRED: false,
+    transfer: null,
     armT:   0,
     warnT:  0,
   });
   G.lastSpawn = G.time;
+}
+
+function beginTransfer(entity, endX, endY, speed, nextState) {
+  const dist = Math.hypot(endX - entity.x, endY - entity.y);
+  entity.transfer = {
+    startX: entity.x,
+    startY: entity.y,
+    endX,
+    endY,
+    t: 0,
+    dur: Math.max(0.06, dist / Math.max(speed, 1)),
+    nextState,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -306,15 +408,21 @@ function doSpawn() {
 // ═══════════════════════════════════════════════════════════
 
 function loseLife(msg) {
+  const prevLives = G.lives;
   G.lives = Math.max(0, G.lives - 1);
   G.lifeFlash = 0.45;
-  G.flashMsg = msg || '';
-  if (G.lives === 0) G.phase = 'gameover';
+  G.lifeLostIndex = Math.max(0, Math.min(2, prevLives - 1));
+  G.lifeNoticeT = 0.9;
+  G.lifeNoticeText = msg || 'Life Lost';
+  if (G.lives === 0) {
+    commitHighScore(G.score);
+    G.phase = 'gameover';
+  }
 }
 
 function gainScore() {
   G.score++;
-  G.scoreFlash = 0.3;
+  G.scoreFlash = 0.45;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -338,7 +446,11 @@ function update(dt) {
   if (G.rotCD > 0) G.rotCD = Math.max(0, G.rotCD - dt);
   if (G.plCD  > 0) G.plCD  = Math.max(0, G.plCD  - dt);
   if (G.lifeFlash > 0) G.lifeFlash -= dt;
+  else G.lifeLostIndex = -1;
+  if (G.lifeNoticeT > 0) G.lifeNoticeT -= dt;
   if (G.scoreFlash > 0) G.scoreFlash -= dt;
+  G.cBridgeY = smoothTo(G.cBridgeY, G.cBridgeTargetY, 18, dt);
+  G.pivotAngle = smoothAngle(G.pivotAngle, G.pivotTargetAngle, 20, dt);
 
   const spd = beltSpeed();
 
@@ -359,7 +471,25 @@ function update(dt) {
   const pkgRemove = new Set();
 
   for (const p of G.pkgs) {
-    if (p.onPRED) {
+    if (p.transfer) {
+      p.transfer.t = Math.min(1, p.transfer.t + dt / p.transfer.dur);
+      const et = easeInOut(p.transfer.t);
+      p.x = lerp(p.transfer.startX, p.transfer.endX, et);
+      p.y = lerp(p.transfer.startY, p.transfer.endY, et);
+      if (p.transfer.t >= 1) {
+        const nextState = p.transfer.nextState;
+        p.transfer = null;
+        if (nextState === 'onC') {
+          p.lane = 'C';
+          p.onC = true;
+          p.warn = false;
+          p.warnT = 0;
+        } else if (nextState === 'onArm') {
+          p.onArm = true;
+          p.armT = 0;
+        }
+      }
+    } else if (p.onPRED) {
       // ── Package on fixed PRED belt (at DY): move left toward D ──
       p.x -= spd * dt;
       if (p.x + PW / 2 <= PRED_L_X) {
@@ -399,11 +529,8 @@ function update(dt) {
       // ── Package on C bridge belt: move left toward merger arm ────
       p.x -= spd * dt;
       if (p.x + PW / 2 <= C_L_X) {
-        p.onC   = false;
-        p.onArm = true;
-        p.armT  = 0;
-        p.x     = C_L_X;
-        // p.y stays at cY; arm will lerp from there to DY
+        p.onC = false;
+        beginTransfer(p, ARM_START_X, p.y, spd * 1.05, 'onArm');
       }
     } else {
       // ── Package on A or B belt: move left ───────────────
@@ -419,11 +546,7 @@ function update(dt) {
         const cY = G.cAlign === 'A' ? AY : BY;
         if (cY === p.y) {
           // Aligned → enter C bridge belt
-          p.lane = 'C';
-          p.onC  = true;
-          p.x    = C_R_X;
-          p.warn = false;
-          p.warnT = 0;
+          beginTransfer(p, C_R_X, cY, spd * 1.1, 'onC');
         } else {
           // Not aligned → fall
           loseLife('MISSED!');
@@ -454,22 +577,26 @@ function update(dt) {
         targetExit: first.targetExit,
         color:      first.color,
         hint:       first.hint,
+        introT:     0,
+        introDur:   Math.max(0.08, Math.hypot(PX - (D_L_X + PW / 2), PY - DY) / Math.max(spd * 1.1, 1)),
         progress:   0,   // 0→1 along F chute
       };
-      // Tutorial: pause when first processed item reaches F
       if (G.tutState === 'waitProcessed') {
-        G.tutState = 'tutPause';
-        G.tutPauseT = TUT_PAUSE;
-        return;
+        G.tutState = 'done';
+        scheduleSpawn();
       }
     }
   }
 
   // ── Move item in F chute ───────────────────────────────────
   if (G.fItem) {
-    const tTime = fTravelTime();
-    G.fItem.progress = Math.min(1, G.fItem.progress + dt / tTime);
-    if (G.fItem.progress >= 1) {
+    if (G.fItem.introT < 1) {
+      G.fItem.introT = Math.min(1, G.fItem.introT + dt / G.fItem.introDur);
+    } else {
+      const tTime = fTravelTime();
+      G.fItem.progress = Math.min(1, G.fItem.progress + dt / tTime);
+    }
+    if (G.fItem.introT >= 1 && G.fItem.progress >= 1) {
       // Item exits F → enter exit belt (follow current pivot direction)
       const exit = G.pivot;
       const fi = G.fItem;
@@ -486,8 +613,16 @@ function update(dt) {
         targetExit: fi.targetExit,
         color:      fi.color,
         exit,
-        x: ex,
-        y: ey,
+        x: PX + Math.cos(G.pivotAngle) * F_LEN,
+        y: PY + Math.sin(G.pivotAngle) * F_LEN,
+        transfer: {
+          startX: PX + Math.cos(G.pivotAngle) * F_LEN,
+          startY: PY + Math.sin(G.pivotAngle) * F_LEN,
+          endX: ex,
+          endY: ey,
+          t: 0,
+          dur: Math.max(0.06, Math.hypot(ex - (PX + Math.cos(G.pivotAngle) * F_LEN), ey - (PY + Math.sin(G.pivotAngle) * F_LEN)) / Math.max(spd * 1.15, 1)),
+        },
       });
     }
   }
@@ -495,7 +630,13 @@ function update(dt) {
   // ── Move exit belt items ───────────────────────────────────
   const exitRemove = new Set();
   for (const item of G.exits) {
-    if (item.exit === 'G') {
+    if (item.transfer) {
+      item.transfer.t = Math.min(1, item.transfer.t + dt / item.transfer.dur);
+      const et = easeInOut(item.transfer.t);
+      item.x = lerp(item.transfer.startX, item.transfer.endX, et);
+      item.y = lerp(item.transfer.startY, item.transfer.endY, et);
+      if (item.transfer.t >= 1) item.transfer = null;
+    } else if (item.exit === 'G') {
       item.y -= spd * dt;
       if (item.y + PH < 0) {
         if (item.exit === item.targetExit) gainScore();
@@ -527,148 +668,568 @@ function update(dt) {
 
 const canvas = document.getElementById('gc');
 const ctx    = canvas.getContext('2d');
+let DPR = 1;
+let VIEW = { scale: 1, offsetX: 0, offsetY: 0 };
+
+function setupCanvas() {
+  const rect = { width: window.innerWidth, height: window.innerHeight };
+  DPR = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+  canvas.width = Math.round(rect.width * DPR);
+  canvas.height = Math.round(rect.height * DPR);
+  const scale = Math.min(rect.width / CW, rect.height / CH);
+  VIEW = {
+    scale,
+    offsetX: (rect.width - CW * scale) / 2,
+    offsetY: (rect.height - CH * scale) / 2,
+  };
+  ctx.setTransform(DPR * scale, 0, 0, DPR * scale, DPR * VIEW.offsetX, DPR * VIEW.offsetY);
+}
+
+window.addEventListener('resize', setupCanvas);
 
 function fillRect(x, y, w, h, color) {
   ctx.fillStyle = color;
-  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  ctx.fillRect(x, y, w, h);
 }
 
 function strokeRect(x, y, w, h, color, lw) {
   ctx.strokeStyle = color;
   ctx.lineWidth = lw || 1;
-  ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h));
+  ctx.strokeRect(x, y, w, h);
 }
 
-function text(str, x, y, color, size, align, bold) {
+function text(str, x, y, color, size, align, bold, alpha) {
   ctx.fillStyle = color;
-  ctx.font = (bold ? 'bold ' : '') + (size || 12) + 'px "Courier New", monospace';
+  ctx.font = `${bold ? 700 : 500} ${size || 12}px "Outfit", sans-serif`;
   ctx.textAlign = align || 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(str, Math.round(x), Math.round(y));
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.fillText(str, x, y);
+  ctx.globalAlpha = 1;
 }
 
-function drawPackage(cx, cy, color, flashing, flashT) {
-  if (flashing && Math.floor(flashT / 0.1) % 2 === 0) {
-    ctx.shadowColor = CLR.warn;
-    ctx.shadowBlur = 10;
+function drawWrappedText(str, x, y, maxWidth, lineHeight, color, size, align, bold, alpha) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.font = `${bold ? 700 : 500} ${size || 12}px "Outfit", sans-serif`;
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'middle';
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+
+  const words = str.split(/\s+/);
+  const lines = [];
+  let current = words[0] || '';
+  for (let i = 1; i < words.length; i++) {
+    const candidate = `${current} ${words[i]}`;
+    if (ctx.measureText(candidate).width <= maxWidth) current = candidate;
+    else {
+      lines.push(current);
+      current = words[i];
+    }
+  }
+  if (current) lines.push(current);
+
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x, startY + i * lineHeight);
+  }
+  ctx.restore();
+}
+
+function drawSticker(cx, cy, type) {
+  const meta = TYPE_META[type];
+  if (!meta) return;
+
+  ctx.save();
+  ctx.fillStyle = meta.color;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+
+  if (meta.shape === 'circle') {
+    ctx.beginPath();
+    ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else if (meta.shape === 'square') {
+    ctx.beginPath();
+    ctx.roundRect(cx - 14, cy - 14, 28, 28, 6);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 16);
+    ctx.lineTo(cx - 16, cy + 12);
+    ctx.lineTo(cx + 16, cy + 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPackage(cx, cy, color, flashing, flashT, stickerType) {
+  const assetKey = stickerType || 'plain';
+  const img = PARCEL_IMAGES[assetKey];
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.save();
+    const aspect = img.naturalWidth / img.naturalHeight;
+    const targetH = PH + 8;
+    const targetW = targetH * aspect;
+    const x = cx - targetW / 2;
+    const y = cy - targetH / 2;
+    const pulse = flashing ? 0.45 + 0.35 * Math.abs(Math.sin(flashT * 8)) : 0.12;
+    ctx.shadowColor = flashing ? `rgba(203,106,92,${pulse})` : 'rgba(29,35,43,0.10)';
+    ctx.shadowBlur = flashing ? 20 : 10;
+    ctx.drawImage(img, x, y, targetW, targetH);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    return;
   }
 
-  const x = Math.round(cx - PW / 2);
-  const y = Math.round(cy - PH / 2);
-  const depth = 7;   // visible front face depth
+  const x = cx - PW / 2;
+  const y = cy - PH / 2;
+  const pulse = flashing ? 0.45 + 0.35 * Math.abs(Math.sin(flashT * 8)) : 0.12;
 
-  // Front face (below top face, belt-colour then darkened)
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y + PH, PW, depth);
-  ctx.fillStyle = 'rgba(0,0,0,0.50)';
-  ctx.fillRect(x, y + PH, PW, depth);
-  // Shadow at bottom
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(x, y + PH + depth - 1, PW, 2);
-
-  // Top face
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, PW, PH);
-
-  // Highlight lines (top-left corner — simulates isometric top-face lighting)
-  ctx.fillStyle = 'rgba(255,255,255,0.30)';
-  ctx.fillRect(x + 2, y + 2, PW - 4, 3);
-  ctx.fillRect(x + 2, y + 2, 3, PH - 4);
-
-  // Box border
-  ctx.strokeStyle = 'rgba(0,0,0,0.40)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(x + 0.5, y + 0.5, PW - 1, PH - 1);
-
+  ctx.save();
+  ctx.shadowColor = flashing ? `rgba(203,106,92,${pulse})` : 'rgba(29,35,43,0.10)';
+  ctx.shadowBlur = flashing ? 20 : 10;
+  ctx.beginPath();
+  ctx.roundRect(x, y, PW, PH, 10);
+  ctx.fillStyle = '#dfbc97';
+  ctx.fill();
   ctx.shadowBlur = 0;
+
+  ctx.beginPath();
+  ctx.roundRect(x + PW / 2 - 4, y + 2, 8, PH - 4, 4);
+  ctx.fillStyle = '#b59371';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.roundRect(x, y, PW, PH, 10);
+  ctx.strokeStyle = 'rgba(24,32,40,0.10)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  if (stickerType) drawSticker(cx, cy, stickerType);
+  ctx.restore();
 }
 
-// Draw a belt lane (horizontal) with 3-D depth face
 function drawBeltH(x1, x2, cy, color) {
-  const depth = 9;
-  const rx = Math.round(x1), rw = Math.round(x2 - x1);
-  const rBot = Math.round(cy + BH);
+  const width = UI.trackW;
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = 'rgba(135,144,154,0.7)';
+  ctx.lineWidth = width + 14;
+  ctx.beginPath();
+  ctx.moveTo(x1, cy);
+  ctx.lineTo(x2, cy);
+  ctx.stroke();
 
-  // Side / front face — belt colour darkened
-  ctx.fillStyle = color;
-  ctx.fillRect(rx, rBot, rw, depth);
-  ctx.fillStyle = 'rgba(0,0,0,0.48)';
-  ctx.fillRect(rx, rBot, rw, depth);
-  // Shadow at foot of depth face
-  ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  ctx.fillRect(rx, rBot + depth - 1, rw, 2);
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(x1, cy);
+  ctx.lineTo(x2, cy);
+  ctx.stroke();
+  ctx.restore();
 
-  // Belt surface
-  fillRect(x1, cy - BH, x2 - x1, BH * 2, color);
-  // Top highlight
-  fillRect(x1, cy - BH,     x2 - x1, 2, 'rgba(255,255,255,0.16)');
-  // Bottom shadow
-  fillRect(x1, cy + BH - 2, x2 - x1, 2, 'rgba(0,0,0,0.22)');
-
-  // Conveyor tick marks
-  ctx.strokeStyle = 'rgba(0,0,0,0.14)';
-  ctx.lineWidth = 1;
-  const tick = 24;
-  const offset = Math.floor((G.time * beltSpeed() / tick)) % tick;
-  for (let tx = x1 - offset; tx < x2; tx += tick) {
-    if (tx >= x1 && tx <= x2) {
-      ctx.beginPath();
-      ctx.moveTo(Math.round(tx), cy - BH + 4);
-      ctx.lineTo(Math.round(tx), cy + BH - 4);
-      ctx.stroke();
-    }
-  }
+  drawMovingRollersLine(x1 + 18, cy, x2 - 18, cy, 'right');
 }
 
-// Draw a belt lane (vertical, moving upward = dir -1, downward = +1) with depth
 function drawBeltV(cx, y1, y2, color, dir) {
-  const depth = 9;
-  const rRight = Math.round(cx + BH);
-  const rh = Math.round(y2 - y1);
+  const width = UI.trackW;
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = 'rgba(135,144,154,0.7)';
+  ctx.lineWidth = width + 14;
+  ctx.beginPath();
+  ctx.moveTo(cx, y1);
+  ctx.lineTo(cx, y2);
+  ctx.stroke();
 
-  // Side / right face — darkened
-  ctx.fillStyle = color;
-  ctx.fillRect(rRight, Math.round(y1), depth, rh);
-  ctx.fillStyle = 'rgba(0,0,0,0.48)';
-  ctx.fillRect(rRight, Math.round(y1), depth, rh);
-  // Shadow at right edge
-  ctx.fillStyle = 'rgba(0,0,0,0.22)';
-  ctx.fillRect(rRight + depth - 1, Math.round(y1), 2, rh);
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(cx, y1);
+  ctx.lineTo(cx, y2);
+  ctx.stroke();
+  ctx.restore();
 
-  // Belt surface
-  fillRect(cx - BH, y1, BH * 2, y2 - y1, color);
-  // Left highlight
-  fillRect(cx - BH, y1, 2, y2 - y1, 'rgba(255,255,255,0.14)');
-  // Right shadow
-  fillRect(cx + BH - 2, y1, 2, y2 - y1, 'rgba(0,0,0,0.22)');
+  drawMovingRollersLine(cx, y1 + 18, cx, y2 - 18, dir < 0 ? 'down' : 'up');
+}
 
-  // Conveyor tick marks
-  ctx.strokeStyle = 'rgba(0,0,0,0.14)';
-  ctx.lineWidth = 1;
-  const tick = 24;
-  const offset = Math.floor((G.time * beltSpeed() / tick)) % tick;
-  for (let ty = y1 - (dir > 0 ? offset : -offset); ty < y2; ty += tick) {
-    if (ty >= y1 && ty <= y2) {
-      ctx.beginPath();
-      ctx.moveTo(cx - BH + 4, Math.round(ty));
-      ctx.lineTo(cx + BH - 4, Math.round(ty));
-      ctx.stroke();
-    }
+function drawRailPath(points, color, width, flow) {
+  ctx.save();
+  ctx.lineCap = 'butt';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(135,144,154,0.7)';
+  ctx.lineWidth = width + 14;
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  ctx.stroke();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  ctx.stroke();
+  ctx.restore();
+
+  drawMovingRollersPath(points, flow || 'forward');
+}
+
+function drawMovingRollersLine(x1, y1, x2, y2, flow) {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const spacing = 28;
+  const radius = 4.5;
+  const nx = (x2 - x1) / len;
+  const ny = (y2 - y1) / len;
+  const alongForward = (flow === 'right' || flow === 'down');
+  const travel = (G.time * beltSpeed() * 0.45) % spacing;
+  const start = alongForward ? spacing - travel : spacing + travel;
+
+  for (let d = start; d < len - spacing * 0.35; d += spacing) {
+    const px = x1 + nx * d;
+    const py = y1 + ny * d;
+    drawNode(px, py, radius, 'rgba(247,244,237,0.62)', 'rgba(24,32,40,0.10)');
   }
 }
 
-// Draw a gap (filled with bg color so the gap is visible)
+function drawMovingRollersPath(points, flow) {
+  const segments = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const [x1, y1] = points[i - 1];
+    const [x2, y2] = points[i];
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    segments.push({ x1, y1, x2, y2, len, start: total });
+    total += len;
+  }
+
+  const spacing = 28;
+  const alongForward = flow !== 'reverse';
+  const travel = (G.time * beltSpeed() * 0.42) % spacing;
+  const start = alongForward ? spacing - travel : spacing + travel;
+
+  for (let d = start; d < total - spacing * 0.35; d += spacing) {
+    const dist = d;
+    const seg = segments.find(s => dist <= s.start + s.len);
+    if (!seg) continue;
+    const local = dist - seg.start;
+    const nx = (seg.x2 - seg.x1) / seg.len;
+    const ny = (seg.y2 - seg.y1) / seg.len;
+    drawNode(seg.x1 + nx * local, seg.y1 + ny * local, 4.5, 'rgba(247,244,237,0.62)', 'rgba(24,32,40,0.10)');
+  }
+}
+
+function drawNode(x, y, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function drawPanel(x, y, w, h, radius, fill, stroke) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawFlowArrow(x, y, dir) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (dir === 'left') ctx.rotate(Math.PI);
+  if (dir === 'up') ctx.rotate(-Math.PI / 2);
+  if (dir === 'down') ctx.rotate(Math.PI / 2);
+  ctx.fillStyle = 'rgba(24,32,40,0.24)';
+  ctx.beginPath();
+  ctx.moveTo(-6, -5);
+  ctx.lineTo(6, 0);
+  ctx.lineTo(-6, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawGap(x1, x2, cy, h) {
-  fillRect(x1, cy - h, x2 - x1, h * 2, CLR.bg);
-  // Edge tick marks (dark, visible on light floor)
-  fillRect(x1, cy - 2, 2, 4, 'rgba(0,0,0,0.18)');
-  fillRect(x2 - 2, cy - 2, 2, 4, 'rgba(0,0,0,0.18)');
 }
 
 function drawGapV(cx, y1, y2, w) {
-  fillRect(cx - w, y1, w * 2, y2 - y1, CLR.bg);
-  fillRect(cx - 2, y1, 4, 2, 'rgba(0,0,0,0.18)');
-  fillRect(cx - 2, y2 - 2, 4, 2, 'rgba(0,0,0,0.18)');
+}
+
+function drawLabelPill(x, y, label, color, align) {
+  const width = 18 + label.length * 7;
+  const left = align === 'right' ? x - width : x;
+  drawPanel(left, y - 13, width, 26, 13, 'rgba(255,255,255,0.78)', 'rgba(24,32,40,0.08)');
+  text(label, left + 10, y, color, 11, 'left', true);
+}
+
+function drawSmallStickerIcon(x, y, type) {
+  const meta = TYPE_META[type];
+  if (!meta) return;
+
+  ctx.save();
+  ctx.fillStyle = meta.color;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+
+  if (meta.shape === 'circle') {
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  } else if (meta.shape === 'square') {
+    ctx.beginPath();
+    ctx.roundRect(x - 7, y - 7, 14, 14, 4);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(x, y - 8);
+    ctx.lineTo(x - 8, y + 6);
+    ctx.lineTo(x + 8, y + 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawFloorLabel(x, y, label, color, align, iconType) {
+  const iconGap = iconType ? 12 : 0;
+  const iconSize = iconType ? 14 : 0;
+  const labelWidth = label.length * 8.2;
+  const totalW = iconSize + iconGap + labelWidth;
+  let startX = x;
+  const textAlign = align || 'center';
+
+  if (textAlign === 'center') startX = x - totalW / 2;
+  else if (textAlign === 'right') startX = x - totalW;
+
+  if (iconType) drawSmallStickerIcon(startX + 7, y, iconType);
+  text(label, startX + iconSize + iconGap, y, color || CLR.dimText, 14, 'left', true, 0.92);
+}
+
+function drawTransferHousingH(cx, cy, width, height) {
+  ctx.save();
+  const outerW = width + 8;
+  const outerH = height + 6;
+  const jawW = Math.max(10, Math.min(14, outerW * 0.24));
+  const jawH = outerH;
+  const gapW = Math.max(12, outerW - jawW * 2 - 10);
+
+  ctx.shadowColor = 'rgba(24,32,40,0.07)';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.roundRect(cx - outerW / 2, cy - outerH / 2, jawW, jawH, 8);
+  ctx.roundRect(cx + outerW / 2 - jawW, cy - outerH / 2, jawW, jawH, 8);
+  ctx.fillStyle = '#9a9ba1';
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.beginPath();
+  ctx.roundRect(cx - outerW / 2 + 2, cy - outerH / 2 + 2, jawW - 4, jawH - 4, 7);
+  ctx.roundRect(cx + outerW / 2 - jawW + 2, cy - outerH / 2 + 2, jawW - 4, jawH - 4, 7);
+  ctx.fillStyle = '#bfc1c6';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.roundRect(cx - gapW / 2, cy - (height - 6) / 2, gapW, height - 6, 7);
+  ctx.fillStyle = '#f4efe7';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.roundRect(cx - gapW / 2 + 2, cy - (height - 6) / 2 + 2, gapW - 4, 3, 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.roundRect(cx - outerW / 2, cy - outerH / 2, jawW, jawH, 8);
+  ctx.roundRect(cx + outerW / 2 - jawW, cy - outerH / 2, jawW, jawH, 8);
+  ctx.strokeStyle = 'rgba(24,32,40,0.12)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTransferHousingTip(x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  drawTransferHousingH(0, 0, 30, 22);
+  ctx.restore();
+}
+
+function drawBridgeModule(x1, x2, cy) {
+  const bodyH = 40;
+  const postW = 8;
+  const postH = 34;
+  const postOffset = 11;
+  const bodyY = cy - bodyH / 2;
+  const bodyW = x2 - x1;
+
+  fillRect(x1, bodyY, bodyW, bodyH, CLR.beltC);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.26)';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1 + 10, cy);
+  ctx.lineTo(x2 - 10, cy);
+  ctx.stroke();
+
+  for (const side of [-1, 1]) {
+    const edgeX = side < 0 ? x1 : x2;
+    const postX = edgeX + side * postOffset;
+
+    ctx.strokeStyle = '#b8b9bf';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(edgeX, cy - 8);
+    ctx.lineTo(postX, cy - 8);
+    ctx.moveTo(edgeX, cy + 8);
+    ctx.lineTo(postX, cy + 8);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.roundRect(postX - postW / 2, cy - postH / 2, postW, postH, 3);
+    ctx.fillStyle = '#a7a9b0';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.roundRect(postX - postW / 2 + 2, cy - postH / 2 + 2, postW - 4, postH - 4, 2);
+    ctx.fillStyle = '#c2c4ca';
+    ctx.fill();
+  }
+
+  drawNode((x1 + x2) / 2, cy, 12, '#f7f4ed', 'rgba(24,32,40,0.12)');
+}
+
+function drawControlButton(x, y, key) {
+  drawPanel(x - 22, y - 22, 44, 44, 8, 'rgba(255,255,255,0.92)', 'rgba(24,32,40,0.16)');
+  text(key, x, y + 1, CLR.structure2, 18, 'center', false);
+}
+
+function drawArrowGlyph(x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = CLR.dimText;
+  ctx.beginPath();
+  ctx.moveTo(-12, -4);
+  ctx.lineTo(3, -4);
+  ctx.lineTo(3, -10);
+  ctx.lineTo(15, 0);
+  ctx.lineTo(3, 10);
+  ctx.lineTo(3, 4);
+  ctx.lineTo(-12, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMachineControls() {
+  drawControlButton(188, 262, 'Q');
+  drawControlButton(188, 354, 'A');
+  drawArrowGlyph(226, 226, -Math.PI / 4);
+  drawArrowGlyph(226, 390, Math.PI / 4);
+
+  const cx = (C_L_X + C_R_X) / 2;
+  drawArrowGlyph(cx, 234, -Math.PI / 2);
+  drawControlButton(cx, 276, 'P');
+  drawControlButton(cx, 352, 'L');
+  drawArrowGlyph(cx, 394, Math.PI / 2);
+}
+
+function drawJunctionCover() {
+  drawPanel(MERGE_X - 28, DY - 18, 56, 36, 12, 'rgba(188,191,198,0.98)', 'rgba(24,32,40,0.14)');
+  fillRect(MERGE_X - 10, DY - 16, 20, 32, 'rgba(148,153,162,0.88)');
+  fillRect(MERGE_X - 1, DY - 16, 2, 32, 'rgba(110,116,126,0.58)');
+}
+
+function getProcessorScanColor() {
+  if (G.dItems.length > 0) return TYPE_META[G.dItems[0].type]?.color || CLR.G;
+  if (G.fItem) return TYPE_META[G.fItem.type]?.color || CLR.G;
+  return 'rgba(99,122,145,0.45)';
+}
+
+function drawProcessorEffect(scanColor) {
+  const centerX = D_L_X + D_LEN / 2;
+  const sweepT = (Math.sin(G.time * 4.6) + 1) / 2;
+  const sweepX = lerp(D_L_X + 18, D_L_X + D_LEN - 18, sweepT);
+  const pulse = 0.5 + 0.5 * Math.sin(G.time * 5.2);
+  const tunnelX = D_L_X + 4;
+  const tunnelY = DY - 18;
+  const tunnelW = D_LEN - 8;
+  const tunnelH = 36;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(tunnelX, tunnelY, tunnelW, tunnelH, 18);
+  ctx.clip();
+
+  const chamberGrad = ctx.createLinearGradient(D_L_X, 0, D_R_X, 0);
+  chamberGrad.addColorStop(0, 'rgba(255,255,255,0)');
+  chamberGrad.addColorStop(0.2, scanColor);
+  chamberGrad.addColorStop(0.5, scanColor);
+  chamberGrad.addColorStop(0.8, scanColor);
+  chamberGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = 0.3 + pulse * 0.12;
+  fillRect(tunnelX, tunnelY, tunnelW, tunnelH, chamberGrad);
+
+  for (let i = 0; i < 6; i++) {
+    const x = D_L_X + 24 + i * 28 + (G.time * 18 % 28);
+    ctx.globalAlpha = 0.08;
+    fillRect(x, tunnelY, 1.5, tunnelH, 'rgba(255,255,255,0.9)');
+  }
+
+  const beamGrad = ctx.createLinearGradient(sweepX - 28, 0, sweepX + 28, 0);
+  beamGrad.addColorStop(0, 'rgba(255,255,255,0)');
+  beamGrad.addColorStop(0.5, 'rgba(255,255,255,0.95)');
+  beamGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = 0.42;
+  fillRect(sweepX - 28, tunnelY - 2, 56, tunnelH + 4, beamGrad);
+
+  ctx.shadowColor = scanColor;
+  ctx.shadowBlur = 24;
+  ctx.globalAlpha = 0.8;
+  fillRect(D_L_X + 16, DY - 2, D_LEN - 32, 4, scanColor);
+  ctx.shadowBlur = 0;
+
+  const orbitR = 52;
+  for (let i = 0; i < 3; i++) {
+    const a = G.time * 2.6 + i * (Math.PI * 2 / 3);
+    const px = centerX + Math.cos(a) * orbitR;
+    const py = DY + Math.sin(a * 1.6) * 8;
+    drawNode(px, py, 2.5, 'rgba(255,255,255,0.75)');
+  }
+
+  ctx.globalAlpha = 0.45 + pulse * 0.25;
+  ctx.strokeStyle = `rgba(255,255,255,${0.24 + pulse * 0.22})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(tunnelX + 10, tunnelY + 8, tunnelW - 20, tunnelH - 16, 12);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -677,65 +1238,22 @@ function drawGapV(cx, y1, y2, w) {
 
 function drawMergerArms() {
   ctx.save();
-  ctx.lineCap  = 'butt';
-  ctx.lineJoin = 'round';   // soft rounded corners at right-angle turns
-
-  // ── Two L-shaped arms: horizontal leg then vertical leg ──
   for (const src of ['A', 'B']) {
     const fromY = src === 'A' ? AY : BY;
-    const armRX = C_L_X - C_L_GAP;  // right end of arm (gap before C)
-
-    // Depth shadow — offset (+4, +5)
-    ctx.strokeStyle = 'rgba(0,0,0,0.48)';
-    ctx.lineWidth   = BH * 2 + 12;
-    ctx.beginPath();
-    ctx.moveTo(armRX + 4,    fromY + 5);
-    ctx.lineTo(MERGE_X + 4,  fromY + 5);  // horizontal leg
-    ctx.lineTo(MERGE_X + 4,  DY + 5);     // vertical leg
-    ctx.stroke();
-
-    // Main belt
-    ctx.strokeStyle = CLR.beltC;
-    ctx.lineWidth   = BH * 2;
-    ctx.beginPath();
-    ctx.moveTo(armRX,   fromY);
-    ctx.lineTo(MERGE_X, fromY);   // horizontal leg
-    ctx.lineTo(MERGE_X, DY);      // vertical leg
-    ctx.stroke();
-
-    // Surface highlight
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-    ctx.lineWidth   = 2;
-    ctx.beginPath();
-    ctx.moveTo(armRX,   fromY);
-    ctx.lineTo(MERGE_X, fromY);
-    ctx.lineTo(MERGE_X, DY);
-    ctx.stroke();
+    const armRX = C_L_X - C_L_GAP;
+    drawRailPath([[armRX, fromY], [MERGE_X, fromY], [MERGE_X, DY]], CLR.beltC, UI.branchW, 'reverse');
   }
-
-  // Merge-point cap where both arms meet PRED
-  const mr = BH + 4;
-  ctx.fillStyle = 'rgba(0,0,0,0.40)';
-  ctx.beginPath(); ctx.arc(MERGE_X + 4, DY + 5, mr, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = CLR.beltC;
-  ctx.beginPath(); ctx.arc(MERGE_X, DY, mr, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(MERGE_X, DY, mr, 0, Math.PI * 2); ctx.stroke();
-
+  drawNode(MERGE_X, DY, 17, CLR.beltC, 'rgba(255,255,255,0.35)');
   ctx.restore();
 
-  // ── C bridge belt (moves between AY and BY) ───────────────
-  const cY = G.cAlign === 'A' ? AY : BY;
-  drawBeltH(C_L_X, C_R_X, cY, CLR.beltC);
-  text('C', (C_L_X + C_R_X) / 2, cY - BH - 10, CLR.dimText, 10, 'center');
+  const cY = G.cBridgeY;
+  drawBridgeModule(C_L_X, C_R_X, cY);
 
-  // ── Gap-1: between A/B belt ends and C right edge ─────────
   drawGap(AB_END_X, C_R_X, AY, BH + 14);
   drawGap(AB_END_X, C_R_X, BY, BH + 14);
-
-  // ── Gap-2: between arm right ends and C left edge ──────────
   drawGap(C_L_X - C_L_GAP, C_L_X, AY, BH + 14);
   drawGap(C_L_X - C_L_GAP, C_L_X, BY, BH + 14);
+
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -743,156 +1261,95 @@ function drawMergerArms() {
 // ═══════════════════════════════════════════════════════════
 
 function renderField() {
-  // ── Concrete floor ───────────────────────────────────────
   fillRect(0, 0, CW, CH, CLR.bg);
-  // Subtle tile grid
-  const TILE = 44;
+  fillRect(0, 0, CW, 82, CLR.bgSoft);
+  const TILE = 56;
   ctx.strokeStyle = CLR.floorGrid;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let gx = 0; gx <= CW; gx += TILE) { ctx.moveTo(gx + 0.5, 0); ctx.lineTo(gx + 0.5, CH); }
-  for (let gy = 0; gy <= CH; gy += TILE) { ctx.moveTo(0, gy + 0.5); ctx.lineTo(CW, gy + 0.5); }
+  for (let gx = 0; gx <= CW; gx += TILE) { ctx.moveTo(gx, 0); ctx.lineTo(gx, CH); }
+  for (let gy = 0; gy <= CH; gy += TILE) { ctx.moveTo(0, gy); ctx.lineTo(CW, gy); }
   ctx.stroke();
 
-  // ── Exit belts (G/H/I) drawn first (behind pivot) ───────
-  // G (north, sky blue)
   drawBeltV(PX, 0, G_ENTRY_Y, CLR.beltG, -1);
-  text('G  RESTOCK', PX + BH + 12, 40, CLR.G, 11, 'left', true);
-
-  // H (west, green)
   drawBeltH(0, H_ENTRY_X, PY, CLR.beltH);
-  text('H  REPAIR', 4, PY - BH - 8, CLR.H, 11, 'left', true);
-
-  // I (south, red)
   drawBeltV(PX, I_ENTRY_Y, CH, CLR.beltI, 1);
-  text('I  RECYCLE', PX + BH + 12, CH - 40, CLR.I, 11, 'left', true);
 
-  // ── Gap-3: between F tips and exit belt entries ──────────
-  // (gap is covered by pivot circle and F arm, visually clear)
+  drawFloorLabel(PX + 118, 108, 'Restock', TYPE_META.Restock.color, 'center', 'Restock');
+  drawFloorLabel(H_ENTRY_X / 2, PY - 42, 'Repair', TYPE_META.Repair.color, 'center', 'Repair');
+  drawFloorLabel(PX + 118, CH - 72, 'Recycle', TYPE_META.Recycle.color, 'center', 'Recycle');
 
-  // ── D processing tunnel ──────────────────────────────────
-  // Tunnel body
-  fillRect(D_L_X, DY - BH - 6, D_LEN, (BH + 6) * 2, CLR.beltD);
-  fillRect(D_L_X, DY - BH - 6, D_LEN, (BH + 6) * 2, CLR.tunnelBg);
-  // Front face of tunnel casing
-  fillRect(D_L_X, DY + BH + 6, D_LEN, 10, CLR.beltD);
-  ctx.fillStyle = 'rgba(0,0,0,0.50)';
-  ctx.fillRect(Math.round(D_L_X), Math.round(DY + BH + 6), Math.round(D_LEN), 10);
-  // Glowing scan-line inside tunnel
-  const glow = 0.35 + 0.15 * Math.sin(G.time * 3.5);
-  ctx.fillStyle = `rgba(60,100,220,${glow})`;
-  ctx.fillRect(Math.round(D_L_X + 4), Math.round(DY - 1), Math.round(D_LEN - 8), 2);
-  // Border
-  strokeRect(D_L_X, DY - BH - 6, D_LEN, (BH + 6) * 2, 'rgba(80,110,200,0.30)', 1);
-  text('PROCESSOR', D_L_X + 8, DY - BH - 16, CLR.dimText, 10, 'left');
+  drawPanel(D_L_X - 6, DY - 28, D_LEN + 12, 56, 24, 'rgba(32,41,51,0.06)', 'rgba(24,32,40,0.08)');
+  drawPanel(D_L_X, DY - 22, D_LEN, 44, 22, CLR.tunnelBg, 'rgba(24,32,40,0.10)');
+  const scanColor = getProcessorScanColor();
+  drawProcessorEffect(scanColor);
+  text('Processor', D_L_X + D_LEN / 2, DY - 38, CLR.dimText, 12, 'center', true);
 
-  // ── PRED belt (fixed conveyor at DY feeding into D) ──────
   drawBeltH(PRED_L_X, PRED_R_X, DY, CLR.beltC);
-  text('D  CONVEYOR', PRED_L_X + 8, DY + BH + 22, CLR.dimText, 10, 'left');
 
-  // ── A belt ───────────────────────────────────────────────
   drawBeltH(AB_END_X, SPAWN_X, AY, CLR.beltA);
-  text('A  STORE RETURNS', AB_END_X + 12, AY - BH - 10, CLR.beltA, 10, 'left');
-
-  // ── B belt ───────────────────────────────────────────────
   drawBeltH(AB_END_X, SPAWN_X, BY, CLR.beltB);
-  text('B  ONLINE RETURNS', AB_END_X + 12, BY + BH + 22, CLR.beltB, 10, 'left');
+  drawFloorLabel((AB_END_X + SPAWN_X) / 2, AY - 34, 'Store Returns', CLR.dimText, 'center');
+  drawFloorLabel((AB_END_X + SPAWN_X) / 2, BY + 38, 'Online Returns', CLR.dimText, 'center');
 
-  // ── Merger arms + C gate (drawn on top of belt ends) ─────
+  drawMachineControls();
   drawMergerArms();
-
-  // ── Pivot E / Chute F ────────────────────────────────────
   drawPivot();
 
-  // ── D tunnel items ───────────────────────────────────────
   for (const item of G.dItems) {
     const prog = Math.min(item.elapsed / D_PROC_TIME, 1);
     const ix = lerp(D_R_X - PW / 2, D_L_X + PW / 2, prog);
-
-    // Hint highlight
-    if (item.hint) {
-      fillRect(ix - PW / 2 - 4, DY - PH / 2 - 4, PW + 8, PH + 8, CLR.hintBg);
-    }
-    fillRect(ix - PW / 2, DY - PH / 2, PW, PH, item.color);
-    strokeRect(ix - PW / 2, DY - PH / 2, PW, PH, 'rgba(255,255,255,0.4)', 1);
-
-    // Hint: show target exit label inside item
-    if (item.hint) {
-      text(item.targetExit, ix, DY, '#000', 10, 'center', true);
-    }
+    drawPackage(ix, DY, item.color, false, 0, item.type);
   }
 
-  // ── fItem in chute ───────────────────────────────────────
   if (G.fItem) {
-    const prog = G.fItem.progress;
     let fx, fy;
-    const piv = G.pivot;
-    if (piv === 'G') { fx = PX;           fy = PY - prog * F_LEN; }
-    else if (piv === 'H') { fx = PX - prog * F_LEN; fy = PY; }
-    else               { fx = PX;           fy = PY + prog * F_LEN; }
-
-    if (G.fItem.hint) {
-      fillRect(fx - PW / 2 - 4, fy - PH / 2 - 4, PW + 8, PH + 8, CLR.hintBg);
+    if (G.fItem.introT < 1) {
+      const intro = easeInOut(G.fItem.introT);
+      fx = lerp(D_L_X + PW / 2, PX, intro);
+      fy = lerp(DY, PY, intro);
+    } else {
+      const prog = G.fItem.progress;
+      fx = PX + Math.cos(G.pivotAngle) * prog * F_LEN;
+      fy = PY + Math.sin(G.pivotAngle) * prog * F_LEN;
     }
-    fillRect(fx - PW / 2, fy - PH / 2, PW, PH, G.fItem.color);
-    strokeRect(fx - PW / 2, fy - PH / 2, PW, PH, 'rgba(255,255,255,0.4)', 1);
-    if (G.fItem.hint) {
-      text(G.fItem.targetExit, fx, fy, '#000', 10, 'center', true);
-    }
+    drawPackage(fx, fy, G.fItem.color, false, 0, G.fItem.type);
   }
 
-  // ── Packages on A/B/C ───────────────────────────────────
   for (const p of G.pkgs) {
-    drawPackage(p.x, p.y, p.color, p.warn, p.warnT);
-    // Control hint if warned and C misaligned
-    if (p.warn) {
-      const cY = G.cAlign === 'A' ? AY : BY;
-      if (cY !== p.y) {
-        const hint = p.src === 'A' ? '[P]' : '[L]';
-        text(hint, p.x, p.y - PH / 2 - 10, CLR.hintHL, 10, 'center', true);
-      }
-    }
+    const py = p.transfer ? p.y : (p.onC ? G.cBridgeY : p.y);
+    drawPackage(p.x, py, p.color, p.warn, p.warnT, null);
   }
 
-  // ── Exit belt items ──────────────────────────────────────
   for (const item of G.exits) {
-    fillRect(item.x - PW / 2, item.y - PH / 2, PW, PH, item.color);
-    strokeRect(item.x - PW / 2, item.y - PH / 2, PW, PH, 'rgba(255,255,255,0.3)', 1);
+    drawPackage(item.x, item.y, item.color, false, 0, item.type);
   }
+
+  drawJunctionCover();
 }
 
 function drawPivot() {
-  const r = 28;
-
-  // ── Chute arm shadow (offset depth) ─────────────────────
+  const r = 30;
+  const tipX = PX + Math.cos(G.pivotAngle) * F_LEN;
+  const tipY = PY + Math.sin(G.pivotAngle) * F_LEN;
   ctx.save();
   ctx.strokeStyle = CLR.pivotSide;
-  ctx.lineWidth = BH * 2;
+  ctx.lineWidth = UI.branchW + 8;
   ctx.lineCap = 'round';
-  ctx.globalAlpha = 0.6;
   ctx.beginPath();
-  ctx.moveTo(PX + 4, PY + 5);
-  if (G.pivot === 'G')      { ctx.lineTo(PX + 4,         PY - F_LEN + 5); }
-  else if (G.pivot === 'H') { ctx.lineTo(PX - F_LEN + 4, PY + 5); }
-  else                       { ctx.lineTo(PX + 4,         PY + F_LEN + 5); }
+  ctx.moveTo(PX + 3, PY + 3);
+  ctx.lineTo(tipX + 3, tipY + 3);
   ctx.stroke();
-  ctx.globalAlpha = 1;
-  ctx.restore();
 
-  // ── Chute arm (yellow) ───────────────────────────────────
-  ctx.save();
   ctx.strokeStyle = CLR.pivot;
-  ctx.lineWidth = BH * 2;
-  ctx.lineCap = 'round';
+  ctx.lineWidth = UI.branchW;
   ctx.beginPath();
   ctx.moveTo(PX, PY);
-  if (G.pivot === 'G')      { ctx.lineTo(PX,           PY - F_LEN); }
-  else if (G.pivot === 'H') { ctx.lineTo(PX - F_LEN,   PY); }
-  else                       { ctx.lineTo(PX,           PY + F_LEN); }
+  ctx.lineTo(tipX, tipY);
   ctx.stroke();
   ctx.restore();
+  drawMovingRollersPath([[PX, PY], [tipX, tipY]], 'reverse');
 
-  // ── Gap-3: break between chute tip and exit belt ─────────
   if (G.pivot === 'G') {
     drawGapV(PX, G_TIP_Y, G_ENTRY_Y, BH + 12);
   } else if (G.pivot === 'H') {
@@ -900,61 +1357,24 @@ function drawPivot() {
   } else {
     drawGapV(PX, I_TIP_Y, I_ENTRY_Y, BH + 12);
   }
+  drawTransferHousingTip(tipX, tipY, G.pivotAngle);
 
-  // ── Pivot platform shadow ────────────────────────────────
-  ctx.beginPath();
-  ctx.arc(PX + 4, PY + 5, r + 3, 0, Math.PI * 2);
-  ctx.fillStyle = CLR.pivotSide;
-  ctx.fill();
+  drawNode(PX + 4, PY + 4, r + 2, CLR.pivotSide);
+  drawNode(PX, PY, r, CLR.pivot, 'rgba(255,255,255,0.28)');
+  drawNode(PX, PY, 10, '#f7f4ed', 'rgba(24,32,40,0.10)');
 
-  // ── Pivot circle ─────────────────────────────────────────
-  ctx.beginPath();
-  ctx.arc(PX, PY, r, 0, Math.PI * 2);
-  ctx.fillStyle = CLR.pivot;
-  ctx.fill();
-
-  // Caution diagonal stripes (clipped to circle)
   ctx.save();
+  ctx.translate(PX, PY);
+  ctx.rotate(G.pivotAngle + Math.PI / 2);
+  ctx.fillStyle = CLR.pivotRim;
   ctx.beginPath();
-  ctx.arc(PX, PY, r, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-  ctx.lineWidth = 6;
-  for (let i = -r * 2; i < r * 2; i += 14) {
-    ctx.beginPath();
-    ctx.moveTo(PX + i - r, PY - r);
-    ctx.lineTo(PX + i + r, PY + r);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // Rim
-  ctx.beginPath();
-  ctx.arc(PX, PY, r, 0, Math.PI * 2);
-  ctx.strokeStyle = CLR.pivotRim;
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  // Direction arrow (dark on yellow)
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.beginPath();
-  if (G.pivot === 'G') {
-    ctx.moveTo(PX, PY - 14); ctx.lineTo(PX - 7, PY + 6); ctx.lineTo(PX + 7, PY + 6);
-  } else if (G.pivot === 'H') {
-    ctx.moveTo(PX - 14, PY); ctx.lineTo(PX + 6, PY - 7); ctx.lineTo(PX + 6, PY + 7);
-  } else {
-    ctx.moveTo(PX, PY + 14); ctx.lineTo(PX - 7, PY - 6); ctx.lineTo(PX + 7, PY - 6);
-  }
+  ctx.moveTo(0, -16);
+  ctx.lineTo(-8, 4);
+  ctx.lineTo(8, 4);
   ctx.closePath();
   ctx.fill();
-
-  // Exit label
-  const label  = { G: 'G', H: 'H', I: 'I' }[G.pivot];
-  const lcolor = { G: CLR.G, H: CLR.H, I: CLR.I }[G.pivot];
-  text(label, PX + r + 8, PY, lcolor, 14, 'left', true);
-
-  // D→E connector strip
-  fillRect(PX + r, PY - 3, D_L_X - (PX + r), 6, CLR.beltD);
+  ctx.restore();
+  drawRailPath([[D_L_X, PY], [PX + r, PY]], CLR.beltD, 6, 'reverse');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -962,51 +1382,89 @@ function drawPivot() {
 // ═══════════════════════════════════════════════════════════
 
 function renderHUD() {
-  // Top bar
-  fillRect(0, 0, CW, 52, 'rgba(8,12,24,0.95)');
-  fillRect(0, 50, CW, 2, 'rgba(200,160,0,0.40)');
-
-  // Lives
-  text('LIVES', 16, 16, CLR.dimText, 10, 'left');
+  const navW = 520;
+  const navX = (CW - navW) / 2;
+  drawPanel(navX, 14, navW, 58, UI.panelR, CLR.hudBg, CLR.hudLine);
+  text('Lives', navX + 16, 32, CLR.dimText, 11, 'left', true);
+  if (G.lifeFlash > 0) {
+    const lp = Math.max(0, G.lifeFlash / 0.45);
+    ctx.save();
+    ctx.globalAlpha = 0.12 + lp * 0.16;
+    drawPanel(navX + 8, 22, 90, 38, 18, 'rgba(203,106,92,0.20)', 'rgba(203,106,92,0.22)');
+    ctx.restore();
+  }
   for (let i = 0; i < 3; i++) {
     const alive = i < G.lives;
-    const hx = 16 + i * 22;
-    fillRect(hx, 24, 16, 14, alive ? '#e03030' : '#222233');
-    strokeRect(hx, 24, 16, 14, alive ? '#ff5555' : '#333344', 1);
+    const hx = navX + 16 + i * 22;
+    if (G.lifeFlash > 0 && i === G.lifeLostIndex) {
+      const lp = Math.max(0, G.lifeFlash / 0.45);
+      ctx.save();
+      ctx.globalAlpha = 0.3 + lp * 0.35;
+      ctx.strokeStyle = CLR.warn;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hx + 7, 52, 11 + (1 - lp) * 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    drawNode(hx + 7, 52, 7, alive ? CLR.I : 'rgba(39,48,58,0.10)', alive ? 'rgba(255,255,255,0.7)' : null);
   }
 
-  // Score
-  text('SCORE', CW / 2 - 50, 16, CLR.dimText, 10, 'left');
-  text(String(G.score).padStart(5, '0'), CW / 2 - 50, 36, CLR.text, 18, 'left', true);
+  text('Score', CW / 2 - 108, 32, CLR.dimText, 11, 'left', true);
+  const scorePulse = Math.max(0, G.scoreFlash / 0.45);
+  const scoreSize = 24 + scorePulse * 5;
+  const scoreColor = scorePulse > 0 ? CLR.hintHL : CLR.text;
+  if (scorePulse > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.14 + scorePulse * 0.2;
+    drawPanel(CW / 2 - 118, 36, 106, 28, 14, 'rgba(185,134,47,0.14)', 'rgba(185,134,47,0.10)');
+    ctx.restore();
+  }
+  text(String(G.score).padStart(5, '0'), CW / 2 - 108, 53, scoreColor, scoreSize, 'left', true);
+  if (scorePulse > 0) {
+    text('+1', CW / 2 - 24, 38 - (1 - scorePulse) * 10, CLR.hintHL, 13, 'left', true, 0.55 + scorePulse * 0.45);
+  }
 
-  // Time
   const elapsed = Math.floor(G.time);
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
-  text('TIME', CW / 2 + 30, 16, CLR.dimText, 10, 'left');
-  text(`${mm}:${ss}`, CW / 2 + 30, 36, CLR.text, 16, 'left', true);
+  text('Time', CW / 2 + 48, 32, CLR.dimText, 11, 'left', true);
+  text(`${mm}:${ss}`, CW / 2 + 48, 53, CLR.text, 22, 'left', true);
+}
 
-  // Controls reference (right side)
-  const cx = CW - 260;
-  text('P/L: divert  Z/X: rotate  ESC: pause', cx, 20, CLR.dimText, 10, 'left');
-  text(`PIVOT → ${G.pivot}   DIVERT → ${G.cAlign}`, cx, 36, CLR.text, 10, 'left');
+function renderLifeNotice() {
+  if (G.lifeNoticeT <= 0) return;
 
-  // Life flash overlay
-  if (G.lifeFlash > 0) {
-    ctx.globalAlpha = G.lifeFlash * 2.0;
-    fillRect(0, 0, CW, CH, CLR.flash);
-    ctx.globalAlpha = 1;
-    if (G.flashMsg) {
-      text(G.flashMsg, CW / 2, CH / 2 - 30, CLR.warn, 28, 'center', true);
-    }
-  }
+  const t = Math.max(0, G.lifeNoticeT / 0.9);
+  const rise = (1 - t) * 10;
+  const alpha = t < 0.2 ? t / 0.2 : 1;
+  const glow = 0.18 + t * 0.16;
+  const w = 240;
+  const h = 88;
+  const x = CW / 2 - w / 2;
+  const y = CH / 2 - h / 2 - 26 - rise;
 
-  // Score flash
-  if (G.scoreFlash > 0) {
-    ctx.globalAlpha = G.scoreFlash * 1.5;
-    fillRect(0, 0, CW, CH, CLR.correct);
-    ctx.globalAlpha = 1;
-  }
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = 'rgba(203,106,92,0.18)';
+  ctx.shadowBlur = 24;
+  drawPanel(x, y, w, h, 24, 'rgba(255,248,245,0.94)', 'rgba(203,106,92,0.16)');
+  ctx.shadowBlur = 0;
+
+  drawPanel(x + 18, y + 18, 40, 40, 14, 'rgba(203,106,92,0.14)', 'rgba(203,106,92,0.08)');
+  ctx.fillStyle = CLR.warn;
+  ctx.beginPath();
+  ctx.arc(x + 38, y + 38, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(203,106,92,${glow})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x + 38, y + 38, 13, 0, Math.PI * 2);
+  ctx.stroke();
+
+  text('Life Lost', x + 74, y + 34, CLR.warn, 17, 'left', true);
+  text(G.lifeNoticeText, x + 74, y + 54, CLR.dimText, 13, 'left', true, 0.95);
+  ctx.restore();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1014,109 +1472,90 @@ function renderHUD() {
 // ═══════════════════════════════════════════════════════════
 
 function renderHints() {
-  if (G.nProcessed >= HINT_LIMIT) return;
-  // Find the first item in D that has a hint
-  const first = G.dItems.find(i => i.hint) || (G.fItem && G.fItem.hint ? G.fItem : null);
-  if (!first) return;
-
-  const px2 = CW - 10, py2 = 70;
-  const bw = 140, bh = 54;
-  fillRect(px2 - bw, py2, bw, bh, 'rgba(20,30,50,0.9)');
-  strokeRect(px2 - bw, py2, bw, bh, CLR.hintHL, 1);
-  text('NEXT ITEM', px2 - bw / 2, py2 + 14, CLR.hintHL, 10, 'center', true);
-
-  const meta = TYPE_META[first.type];
-  fillRect(px2 - bw / 2 - 20, py2 + 26, 40, 18, first.color);
-  text(first.type, px2 - bw / 2 + 26, py2 + 36, first.color, 11, 'left', true);
-
-  // Highlight correct exit label
-  const exitLabels = { G: { x: PX + BH + 12, y: 40 }, H: { x: 4, y: PY - BH - 8 }, I: { x: PX + BH + 12, y: CH - 40 } };
-  const el = exitLabels[first.targetExit];
-  ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(G.time * 4));
-  fillRect(el.x - 2, el.y - 8, 80, 18, CLR.hintBg);
-  ctx.globalAlpha = 1;
+  return;
 }
 
 // ═══════════════════════════════════════════════════════════
 //  RENDER — OVERLAY SCREENS
 // ═══════════════════════════════════════════════════════════
 
+function drawTitleLogo(cx, cy, maxW) {
+  if (!TITLE_LOGO.complete || TITLE_LOGO.naturalWidth <= 0) return false;
+  const aspect = TITLE_LOGO.naturalWidth / TITLE_LOGO.naturalHeight;
+  const w = maxW;
+  const h = w / aspect;
+  ctx.save();
+  ctx.shadowColor = 'rgba(24,32,40,0.06)';
+  ctx.shadowBlur = 10;
+  ctx.drawImage(TITLE_LOGO, cx - w / 2, cy - h / 2, w, h);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+  return true;
+}
+
 function renderTitle() {
-  // Concrete floor
   fillRect(0, 0, CW, CH, CLR.bg);
-  const TILE = 44;
+  fillRect(0, 0, CW, CH, 'rgba(255,255,255,0.35)');
+  const TILE = 56;
   ctx.strokeStyle = CLR.floorGrid;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let gx = 0; gx <= CW; gx += TILE) { ctx.moveTo(gx + 0.5, 0); ctx.lineTo(gx + 0.5, CH); }
-  for (let gy = 0; gy <= CH; gy += TILE) { ctx.moveTo(0, gy + 0.5); ctx.lineTo(CW, gy + 0.5); }
+  for (let gx = 0; gx <= CW; gx += TILE) { ctx.moveTo(gx, 0); ctx.lineTo(gx, CH); }
+  for (let gy = 0; gy <= CH; gy += TILE) { ctx.moveTo(0, gy); ctx.lineTo(CW, gy); }
   ctx.stroke();
 
-  // Belt sketch preview (ghosted)
   ctx.globalAlpha = 0.40;
-  fillRect(AB_END_X, AY - BH, SPAWN_X - AB_END_X, BH * 2, CLR.beltA);
-  fillRect(AB_END_X, BY - BH, SPAWN_X - AB_END_X, BH * 2, CLR.beltB);
-  fillRect(PRED_L_X, DY - BH, PRED_LEN, BH * 2, CLR.beltC);
-  fillRect(D_L_X, DY - BH, D_LEN, BH * 2, CLR.beltD);
-  fillRect(0, PY - BH, H_ENTRY_X, BH * 2, CLR.beltH);
-  fillRect(PX - BH, 0, BH * 2, G_ENTRY_Y, CLR.beltG);
-  fillRect(PX - BH, I_ENTRY_Y, BH * 2, CH - I_ENTRY_Y, CLR.beltI);
-  // Merger arms (ghosted sketch — straight diagonal)
-  ctx.lineCap = 'round';
-  for (const [fromY, color] of [[AY, CLR.beltA], [BY, CLR.beltB]]) {
-    ctx.strokeStyle = color; ctx.lineWidth = BH * 2;
-    ctx.beginPath(); ctx.moveTo(C_L_X, fromY); ctx.lineTo(MERGE_X, DY);
-    ctx.stroke();
-  }
-  // Pivot
-  ctx.beginPath(); ctx.arc(PX, PY, 28, 0, Math.PI * 2);
-  ctx.fillStyle = CLR.pivot; ctx.fill();
+  drawBeltH(AB_END_X, SPAWN_X, AY, CLR.beltA);
+  drawBeltH(AB_END_X, SPAWN_X, BY, CLR.beltB);
+  drawBeltH(PRED_L_X, PRED_R_X, DY, CLR.beltC);
+  drawBeltV(PX, 0, G_ENTRY_Y, CLR.beltG, -1);
+  drawBeltH(0, H_ENTRY_X, PY, CLR.beltH);
+  drawBeltV(PX, I_ENTRY_Y, CH, CLR.beltI, 1);
+  drawBridgeModule(C_L_X, C_R_X, AY);
+  drawRailPath([[C_L_X - C_L_GAP, AY], [MERGE_X, AY], [MERGE_X, DY]], CLR.beltC, UI.branchW, 'reverse');
+  drawRailPath([[C_L_X - C_L_GAP, BY], [MERGE_X, BY], [MERGE_X, DY]], CLR.beltC, UI.branchW, 'reverse');
+  drawTransferHousingTip(PX, PY - F_LEN, -Math.PI / 2);
+  drawNode(PX, PY, 28, CLR.pivot, 'rgba(255,255,255,0.24)');
   ctx.globalAlpha = 1;
 
-  // Title panel
-  ctx.fillStyle = 'rgba(8,12,22,0.92)';
-  ctx.fillRect(CW / 2 - 260, CH / 2 - 140, 520, 280);
-  strokeRect(CW / 2 - 260, CH / 2 - 140, 520, 280, 'rgba(200,160,0,0.50)', 2);
+  const cardW = 520;
+  const cardH = 272;
+  const cardX = CW / 2 - cardW / 2;
+  const cardY = CH / 2 - cardH / 2 + 4;
+  drawPanel(cardX, cardY, cardW, cardH, 30, 'rgba(255,255,255,0.84)', 'rgba(24,32,40,0.08)');
 
-  text('RETURNS PROCESSOR', CW / 2, CH / 2 - 96, CLR.pivotRim, 28, 'center', true);
-  text('────────────────────────────────', CW / 2, CH / 2 - 64, CLR.dimText, 11, 'center');
+  const logoDrawn = drawTitleLogo(CW / 2, cardY + 62, 220);
+  if (!logoDrawn) {
+    text('Returns Processor', CW / 2, cardY + 70, CLR.text, 34, 'center', true);
+  }
+  drawWrappedText(
+    'Sort returned parcels through the processor and route them to the right destination.',
+    CW / 2,
+    cardY + 130,
+    360,
+    24,
+    CLR.dimText,
+    17,
+    'center'
+  );
 
-  text('Route returned items to the correct exit.', CW / 2, CH / 2 - 36, CLR.text, 13, 'center');
-  text('Miss or misroute — lose a life.', CW / 2, CH / 2 - 14, CLR.text, 13, 'center');
-
-  const pad = CW / 2 - 180;
-  text('P / L    divert belt C to A or B', pad, CH / 2 + 20, CLR.dimText, 12, 'left');
-  text('Z / X    rotate exit G → H → I',  pad, CH / 2 + 40, CLR.dimText, 12, 'left');
-  text('ESC      pause / unpause',          pad, CH / 2 + 60, CLR.dimText, 12, 'left');
-
-  const blink = Math.floor(performance.now() / 550) % 2 === 0;
-  if (blink) text('PRESS ANY KEY TO START', CW / 2, CH / 2 + 100, CLR.hintHL, 15, 'center', true);
+  drawPanel(CW / 2 - 122, cardY + 188, 244, 34, 17, 'rgba(39,48,58,0.06)', 'rgba(24,32,40,0.08)');
+  text('Press Any Key to Start', CW / 2, cardY + 205, CLR.hintHL, 14, 'center', true);
 }
 
 function renderGameOver() {
-  ctx.globalAlpha = 0.6;
-  fillRect(0, 0, CW, CH, '#000');
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = 'rgba(10,16,32,0.95)';
-  ctx.fillRect(CW / 2 - 200, CH / 2 - 100, 400, 200);
-  strokeRect(CW / 2 - 200, CH / 2 - 100, 400, 200, CLR.I, 2);
-
-  text('GAME OVER', CW / 2, CH / 2 - 55, CLR.I, 32, 'center', true);
-  text(`FINAL SCORE: ${G.score}`, CW / 2, CH / 2 - 4, CLR.text, 18, 'center', true);
+  fillRect(0, 0, CW, CH, CLR.overlay);
+  drawPanel(CW / 2 - 220, CH / 2 - 112, 440, 224, 28, 'rgba(255,255,255,0.90)', 'rgba(24,32,40,0.08)');
+  text('Game Over', CW / 2, CH / 2 - 46, CLR.I, 34, 'center', true);
+  text(`Final score ${G.score}`, CW / 2, CH / 2, CLR.text, 20, 'center', true);
+  text(`High Score ${String(G.bestScore).padStart(5, '0')}`, CW / 2, CH / 2 + 28, CLR.dimText, 14, 'center', true);
 
   const blink = Math.floor(performance.now() / 550) % 2 === 0;
-  if (blink) text('PRESS ANY KEY TO RESTART', CW / 2, CH / 2 + 55, CLR.hintHL, 13, 'center', true);
+  if (blink) text('PRESS ANY KEY TO RESTART', CW / 2, CH / 2 + 72, CLR.hintHL, 14, 'center', true);
 }
 
 function renderTutorialOverlay() {
-  if (G.tutState === 'tutPause') {
-    // Show Z/X prompt while paused at E/F
-    ctx.fillStyle = 'rgba(10,16,32,0.75)';
-    ctx.fillRect(PX - 120, PY - 80, 240, 60);
-    strokeRect(PX - 120, PY - 80, 240, 60, CLR.hintHL, 1);
-    text('Z / X  to route the item!', PX, PY - 50, CLR.hintHL, 12, 'center', true);
-  }
+  return;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1124,16 +1563,10 @@ function renderTutorialOverlay() {
 // ═══════════════════════════════════════════════════════════
 
 function renderPause() {
-  ctx.globalAlpha = 0.55;
-  fillRect(0, 0, CW, CH, '#000');
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = 'rgba(10,16,32,0.96)';
-  ctx.fillRect(CW / 2 - 160, CH / 2 - 70, 320, 140);
-  strokeRect(CW / 2 - 160, CH / 2 - 70, 320, 140, 'rgba(100,140,220,0.5)', 2);
-
-  text('PAUSED', CW / 2, CH / 2 - 26, CLR.hintHL, 28, 'center', true);
-  text('ESC to resume', CW / 2, CH / 2 + 22, CLR.dimText, 13, 'center');
+  fillRect(0, 0, CW, CH, CLR.overlay);
+  drawPanel(CW / 2 - 180, CH / 2 - 78, 360, 156, 24, 'rgba(255,255,255,0.90)', 'rgba(24,32,40,0.08)');
+  text('Paused', CW / 2, CH / 2 - 18, CLR.hintHL, 30, 'center', true);
+  text('Esc to resume', CW / 2, CH / 2 + 30, CLR.dimText, 14, 'center', true);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1141,21 +1574,34 @@ function renderPause() {
 // ═══════════════════════════════════════════════════════════
 
 function render() {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+  ctx.setTransform(DPR * VIEW.scale, 0, 0, DPR * VIEW.scale, DPR * VIEW.offsetX, DPR * VIEW.offsetY);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, CW, CH);
+  ctx.clip();
+
   if (G.phase === 'title') {
     renderTitle();
     renderHUD();  // just for the time ticker on title
+    ctx.restore();
     return;
   }
 
   renderField();
   renderHints();
   renderHUD();
+  renderLifeNotice();
 
   if (G.phase === 'gameover') renderGameOver();
   if (G.phase === 'playing') {
     if (G.paused) renderPause();
     else renderTutorialOverlay();
   }
+  ctx.restore();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1177,6 +1623,8 @@ document.addEventListener('keydown', e => {
     initState();
     G.phase = 'playing';
     G.tutState = 'waitFirstPkg';
+    G.cBridgeTargetY = AY;
+    G.pivotTargetAngle = angleForPivot('G');
     return;
   }
 
@@ -1193,26 +1641,32 @@ document.addEventListener('keydown', e => {
     case 'p':
       if (G.plCD <= 0 && G.cAlign !== 'A') {
         G.cAlign = 'A';
+        G.cBridgeTargetY = AY;
         G.plCD = PL_CD_TIME;
       }
       break;
     case 'l':
       if (G.plCD <= 0 && G.cAlign !== 'B') {
         G.cAlign = 'B';
+        G.cBridgeTargetY = BY;
         G.plCD = PL_CD_TIME;
       }
       break;
-    case 'z':
+    case 'q':
       if (G.rotCD <= 0) {
-        const seqZ = ['G', 'H', 'I'];
-        G.pivot = seqZ[(seqZ.indexOf(G.pivot) + 1) % 3];
+        if (G.pivot === 'I') G.pivot = 'H';
+        else if (G.pivot === 'H') G.pivot = 'G';
+        else G.pivot = 'G';
+        G.pivotTargetAngle = angleForPivot(G.pivot);
         G.rotCD = ROT_CD_TIME;
       }
       break;
-    case 'x':
+    case 'a':
       if (G.rotCD <= 0) {
-        const seqX = ['G', 'H', 'I'];
-        G.pivot = seqX[(seqX.indexOf(G.pivot) + 2) % 3];
+        if (G.pivot === 'G') G.pivot = 'H';
+        else if (G.pivot === 'H') G.pivot = 'I';
+        else G.pivot = 'I';
+        G.pivotTargetAngle = angleForPivot(G.pivot);
         G.rotCD = ROT_CD_TIME;
       }
       break;
@@ -1223,6 +1677,8 @@ function startGame() {
   initState();
   G.phase = 'playing';
   G.tutState = 'waitFirstPkg';
+  G.cBridgeTargetY = AY;
+  G.pivotTargetAngle = angleForPivot('G');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1244,6 +1700,7 @@ function loop(ts) {
 
 // ── Boot ─────────────────────────────────────────────────
 initState();
+setupCanvas();
 requestAnimationFrame(loop);
 </script>
 </body>
