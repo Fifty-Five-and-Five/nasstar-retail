@@ -182,6 +182,8 @@ const UI = {
   lineW: 2,
 };
 
+const RIGHT_EDGE_X = CW - UI.trackW / 2 - 2;
+
 // ═══════════════════════════════════════════════════════════
 //  MULBERRY32 PRNG
 // ═══════════════════════════════════════════════════════════
@@ -414,6 +416,10 @@ function loseLife(msg) {
   G.lifeLostIndex = Math.max(0, Math.min(2, prevLives - 1));
   G.lifeNoticeT = 0.9;
   G.lifeNoticeText = msg || 'Life Lost';
+  if (G.tutState !== 'done') {
+    G.tutState = 'done';
+    G.spawnAt = G.time;
+  }
   if (G.lives === 0) {
     commitHighScore(G.score);
     G.phase = 'gameover';
@@ -1262,7 +1268,6 @@ function drawMergerArms() {
 
 function renderField() {
   fillRect(0, 0, CW, CH, CLR.bg);
-  fillRect(0, 0, CW, 82, CLR.bgSoft);
   const TILE = 56;
   ctx.strokeStyle = CLR.floorGrid;
   ctx.lineWidth = 1;
@@ -1287,8 +1292,8 @@ function renderField() {
 
   drawBeltH(PRED_L_X, PRED_R_X, DY, CLR.beltC);
 
-  drawBeltH(AB_END_X, SPAWN_X, AY, CLR.beltA);
-  drawBeltH(AB_END_X, SPAWN_X, BY, CLR.beltB);
+  drawBeltH(AB_END_X, RIGHT_EDGE_X, AY, CLR.beltA);
+  drawBeltH(AB_END_X, RIGHT_EDGE_X, BY, CLR.beltB);
   drawFloorLabel((AB_END_X + SPAWN_X) / 2, AY - 34, 'Store Returns', CLR.dimText, 'center');
   drawFloorLabel((AB_END_X + SPAWN_X) / 2, BY + 38, 'Online Returns', CLR.dimText, 'center');
 
@@ -1384,7 +1389,7 @@ function drawPivot() {
 function renderHUD() {
   const navW = 520;
   const navX = (CW - navW) / 2;
-  drawPanel(navX, 14, navW, 58, UI.panelR, CLR.hudBg, CLR.hudLine);
+  drawPanel(navX, 10, navW, 64, 38, 'rgba(255,255,255,0.92)', 'rgba(24,32,40,0.08)');
   text('Lives', navX + 16, 32, CLR.dimText, 11, 'left', true);
   if (G.lifeFlash > 0) {
     const lp = Math.max(0, G.lifeFlash / 0.45);
