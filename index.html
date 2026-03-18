@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Returns Processor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0f1a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'Courier New', monospace;
+}
+canvas {
+  display: block;
+  border: 2px solid #223;
+  image-rendering: pixelated;
+}
+</style>
+</head>
+<body>
+<canvas id="gc" width="1000" height="620"></canvas>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+//  LAYOUT CONSTANTS
+// ═══════════════════════════════════════════════════════════
+
+const CW = 1000, CH = 620;
+
+// Package size
+const PW = 32, PH = 28;
+
+// Belt visual thickness (half above/below centre)
+const BH = 22;
+
+// ── Y centres ───────────────────────────────────────────────
+const AY  = 155;   // Belt A
+const BY  = 475;   // Belt B
+const DY  = 315;   // Belt D / pivot
+
+// ── X boundaries (packages spawn right, move LEFT) ──────────
+const SPAWN_X   = 990;
+const AB_END_X  = 750;   // left end of A/B
+
+// C bridge: short square belt that moves between AY and BY,
+// bridging A or B belt to the fixed merger arm on that side
+const C_LEN     = 50;
+const C_R_X     = 722;             // right end of C  (28 px gap from AB_END_X)
+const C_L_X     = C_R_X - C_LEN;  // left end of C  (672)
+const C_L_GAP   = 14;              // gap between arm right ends and C left end
+
+// Fixed merger arms: L-shaped belts with rounded corners
+// Top arm: (C_L_X, AY) → right-angle at (MERGE_X, AY) → (MERGE_X, DY)
+// Bot arm: (C_L_X, BY) → right-angle at (MERGE_X, BY) → (MERGE_X, DY)
+const MERGE_X   = 600;
+const ARM_H_LEN = C_L_X - MERGE_X;          // horizontal leg = 72 px
+const ARM_V_LEN = DY - AY;                  // vertical leg   = 160 px  (same for B)
+const ARM_LEN   = ARM_H_LEN + ARM_V_LEN;    // total path length = 232 px
+
+const PRED_R_X  = MERGE_X;   // 600
+const PRED_L_X  = 520;        // PRED length = 80 px  (short visual connector)
+const PRED_LEN  = PRED_R_X - PRED_L_X;
+
+const D_R_X     = PRED_L_X;  // 520
+const D_L_X     = 340;        // D len = 180 px  (longer — more reaction time)
+const D_LEN     = D_R_X - D_L_X;
+
+// ── Pivot / chute ────────────────────────────────────────────
+const PX = 300, PY = DY;   // E/F pivot centre — more central, longer exit conveyors
+const F_LEN = 120;          // chute arm (px)
+const F_GAP = 18;           // gap between F tip and exit belt
+
+// F tip positions for each exit
+const G_TIP_Y = PY - F_LEN;          // 195
+const H_TIP_X = PX - F_LEN;          // 180
+const I_TIP_Y = PY + F_LEN;          // 435
+
+// Exit belt entry (past the gap)
+const G_ENTRY_Y = G_TIP_Y - F_GAP;   // 177
+const H_ENTRY_X = H_TIP_X - F_GAP;   // 162
+const I_ENTRY_Y = I_TIP_Y + F_GAP;   // 453
+
+// Danger zone: last 15% of A/B belt
+const AB_LEN    = SPAWN_X - AB_END_X; // 240
+const WARN_DIST = AB_LEN * 0.15;       // 36 px
+
+// ═══════════════════════════════════════════════════════════
+//  TIMING CONSTANTS
+// ═══════════════════════════════════════════════════════════
+
+const D_PROC_TIME  = 1.8;    // fixed D processing time (s)
+const D_SPEED      = D_LEN / D_PROC_TIME;  // ~191 px/s (independent of belt speed)
+
+const ROT_CD_TIME  = 0.16;   // Z/X rotation cooldown (s)
+const PL_CD_TIME   = 0.12;   // P/L cooldown (s)
+
+// Belt speed ramp
+const SPD_S = 55, SPD_E = 110;    // px/s start → end (much gentler start)
+const GAME_DUR = 300;              // 5 min in seconds
+
+// Spawn interval ramp
+const SPAWN_AVG_S = 5.0,  SPAWN_AVG_E = 1.6;   // very slow start, builds up
+const SPAWN_MIN_S = 2.5,  SPAWN_MIN_E = 0.9;   // hard minimum gap
+
+// Tutorial pause when first item reaches E/F
+const TUT_PAUSE = 0.6;
+
+// Number of items that get hints
+const HINT_LIMIT = 5;
+
+// ═══════════════════════════════════════════════════════════
+//  COLOURS
+// ═══════════════════════════════════════════════════════════
+
+const CLR = {
+  // ── Floor ────────────────────────────────────────────────
+  bg:        '#bfc4cc',   // light concrete
+  floorGrid: 'rgba(0,0,0,0.055)',
+
+  // ── Belt surfaces ────────────────────────────────────────
+  beltA:     '#306898',   // store returns — steel blue
+  beltB:     '#8c4a0c',   // online returns — amber
+  beltC:     '#485868',   // switch / conveyor — steel grey
+  beltD:     '#22262e',   // processor tunnel — dark steel
+  tunnelBg:  '#12141a',
+
+  // ── Package faces ────────────────────────────────────────
+  pkgA:      '#4e8ec0',   // steel blue — matches belt A (store returns)
+  pkgB:      '#c86018',   // amber-orange — matches belt B (online returns)
+
+  // ── Exit destination colours ─────────────────────────────
+  G:         '#4ab8ea',   // Restock  — sky blue
+  H:         '#44cc70',   // Repair   — green
+  I:         '#e85555',   // Recycle  — red
+  beltG:     '#1a4e66',
+  beltH:     '#1a5030',
+  beltI:     '#602222',
+
+  // ── Pivot E — factory yellow ─────────────────────────────
+  pivot:     '#c89800',
+  pivotSide: '#7a5c00',
+  pivotRim:  '#f0c400',
+
+  // ── Text ─────────────────────────────────────────────────
+  text:      '#d8e4f0',   // light text for HUD (dark bar)
+  dimText:   '#4a5a6a',   // labels on field (dark enough on concrete)
+
+  // ── UI ───────────────────────────────────────────────────
+  gap:       '#bfc4cc',   // matches bg
+  warn:      '#ff2222',
+  hintHL:    '#f0a000',
+  hintBg:    'rgba(240,160,0,0.20)',
+  hudBg:     'rgba(8,12,22,0.94)',
+  flash:     'rgba(255,50,50,0.35)',
+  correct:   'rgba(60,220,100,0.22)',
+};
+
+// ═══════════════════════════════════════════════════════════
+//  MULBERRY32 PRNG
+// ═══════════════════════════════════════════════════════════
+
+let _seed = Date.now() >>> 0;
+function rand() {
+  _seed = (_seed + 0x6d2b79f5) >>> 0;
+  let z = _seed;
+  z = Math.imul(z ^ (z >>> 15), z | 1);
+  z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+  return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════════
+
+let G;
+
+function initState() {
+  G = {
+    phase:   'title',   // 'title' | 'playing' | 'gameover'
+    paused:  false,
+    lives:   3,
+    score:   0,
+    time:    0,
+
+    // Controls
+    cAlign:  'A',       // 'A' | 'B'
+    pivot:   'G',       // 'G' | 'H' | 'I'
+    rotCD:   0,
+    plCD:    0,
+
+    // Entities
+    pkgs:    [],        // packages on A, B, C belts
+    dItems:  [],        // packages inside D tunnel
+    fItem:   null,      // item currently in F chute (one at a time)
+    exits:   [],        // items on G/H/I exit belts
+
+    // Spawn
+    spawnAt:   2.5,
+    lastSpawn: -99,
+    streakA:   0,
+    streakB:   0,
+
+    // Output type
+    rStreak:     0,     // consecutive Restock streak
+    nProcessed:  0,     // total items that entered D
+
+    // Tutorial state
+    tutState:      'waitFirstPkg',  // 'waitFirstPkg'|'waitProcessed'|'tutPause'|'done'
+    tutPauseT:     0,
+    tutFirstSpawned: false,
+
+    // Visual effects
+    lifeFlash:   0,
+    scoreFlash:  0,
+    flashMsg:    '',
+
+    uid: 1,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// Position along L-shaped merger arm (t = 0→1): horizontal then vertical
+function getArmPoint(src, t) {
+  const fromY = src === 'A' ? AY : BY;
+  const tH = ARM_H_LEN / ARM_LEN;   // fraction of path that is horizontal
+  if (t <= tH) {
+    return { x: lerp(C_L_X, MERGE_X, t / tH), y: fromY };
+  } else {
+    return { x: MERGE_X, y: lerp(fromY, DY, (t - tH) / (1 - tH)) };
+  }
+}
+
+function ramp() { return clamp(G.time / GAME_DUR, 0, 1); }
+function beltSpeed()  { return lerp(SPD_S, SPD_E, ramp()); }
+function spawnAvg()   { return lerp(SPAWN_AVG_S, SPAWN_AVG_E, ramp()); }
+function spawnMin()   { return lerp(SPAWN_MIN_S, SPAWN_MIN_E, ramp()); }
+function fTravelTime(){ return F_LEN / beltSpeed(); }
+
+// ═══════════════════════════════════════════════════════════
+//  SPAWN  (weighted, streak-limited)
+// ═══════════════════════════════════════════════════════════
+
+function chooseLane() {
+  let wA = (G.streakA >= 4) ? 0 : 4;
+  let wB = (G.streakB >= 4) ? 0 : 5;
+  const r = rand() * (wA + wB);
+  return r < wA ? 'A' : 'B';
+}
+
+function chooseType() {
+  let wR = (G.rStreak >= 4) ? 0 : 70;
+  let wP = 10, wC = 20;
+  const total = wR + wP + wC;
+  const r = rand() * total;
+  if (r < wR) return 'Restock';
+  if (r < wR + wP) return 'Repair';
+  return 'Recycle';
+}
+
+const TYPE_META = {
+  Restock: { exit: 'G', color: CLR.G },
+  Repair:  { exit: 'H', color: CLR.H },
+  Recycle: { exit: 'I', color: CLR.I },
+};
+
+function scheduleSpawn() {
+  const avg = spawnAvg();
+  const interval = avg + (rand() - 0.5) * avg * 0.8;
+  G.spawnAt = G.time + Math.max(spawnMin(), interval);
+}
+
+function doSpawn() {
+  const lane = chooseLane();
+  G.streakA = lane === 'A' ? G.streakA + 1 : 0;
+  G.streakB = lane === 'B' ? G.streakB + 1 : 0;
+  G.pkgs.push({
+    id:    G.uid++,
+    lane:  lane,
+    src:   lane,
+    x:     SPAWN_X,
+    y:     lane === 'A' ? AY : BY,
+    color: lane === 'A' ? CLR.pkgA : CLR.pkgB,
+    onC:    false,
+    onArm:  false,
+    onPRED: false,
+    armT:   0,
+    warnT:  0,
+  });
+  G.lastSpawn = G.time;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LIFE LOSS / SCORE
+// ═══════════════════════════════════════════════════════════
+
+function loseLife(msg) {
+  G.lives = Math.max(0, G.lives - 1);
+  G.lifeFlash = 0.45;
+  G.flashMsg = msg || '';
+  if (G.lives === 0) G.phase = 'gameover';
+}
+
+function gainScore() {
+  G.score++;
+  G.scoreFlash = 0.3;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UPDATE
+// ═══════════════════════════════════════════════════════════
+
+function update(dt) {
+  if (G.phase === 'title' || G.phase === 'gameover' || G.paused) return;
+
+  // Freeze during tutorial pause
+  if (G.tutState === 'tutPause') {
+    G.tutPauseT -= dt;
+    if (G.tutPauseT <= 0) {
+      G.tutState = 'done';
+      scheduleSpawn();
+    }
+    return;
+  }
+
+  G.time += dt;
+  if (G.rotCD > 0) G.rotCD = Math.max(0, G.rotCD - dt);
+  if (G.plCD  > 0) G.plCD  = Math.max(0, G.plCD  - dt);
+  if (G.lifeFlash > 0) G.lifeFlash -= dt;
+  if (G.scoreFlash > 0) G.scoreFlash -= dt;
+
+  const spd = beltSpeed();
+
+  // ── Spawn ──────────────────────────────────────────────────
+  if (G.tutState === 'waitFirstPkg') {
+    // Tutorial: spawn exactly 1 package then wait
+    if (!G.tutFirstSpawned) {
+      doSpawn();
+      G.tutFirstSpawned = true;
+      G.spawnAt = Infinity;
+    }
+  } else if (G.tutState === 'done' && G.time >= G.spawnAt) {
+    doSpawn();
+    scheduleSpawn();
+  }
+
+  // ── Move packages on A/B/C belts ──────────────────────────
+  const pkgRemove = new Set();
+
+  for (const p of G.pkgs) {
+    if (p.onPRED) {
+      // ── Package on fixed PRED belt (at DY): move left toward D ──
+      p.x -= spd * dt;
+      if (p.x + PW / 2 <= PRED_L_X) {
+        // Reached PRED left end → enter D tunnel
+        const type = chooseType();
+        G.rStreak = type === 'Restock' ? G.rStreak + 1 : 0;
+        const meta = TYPE_META[type];
+        G.nProcessed++;
+        const hint = G.nProcessed <= HINT_LIMIT;
+        G.dItems.push({
+          id:     G.uid++,
+          type,
+          targetExit: meta.exit,
+          color:      meta.color,
+          elapsed:    0,
+          hint,
+        });
+        pkgRemove.add(p.id);
+
+        if (G.tutState === 'waitFirstPkg') {
+          G.tutState = 'waitProcessed';
+        }
+      }
+    } else if (p.onArm) {
+      // ── Package on diagonal merger arm: lerp from C_L_X/srcY → MERGE_X/DY ──
+      p.armT = Math.min(1, p.armT + spd * dt / ARM_LEN);
+      const ap = getArmPoint(p.src, p.armT);
+      p.x = ap.x;
+      p.y = ap.y;
+      if (p.armT >= 1) {
+        p.onArm  = false;
+        p.onPRED = true;
+        p.x      = PRED_R_X;
+        p.y      = DY;
+      }
+    } else if (p.onC) {
+      // ── Package on C bridge belt: move left toward merger arm ────
+      p.x -= spd * dt;
+      if (p.x + PW / 2 <= C_L_X) {
+        p.onC   = false;
+        p.onArm = true;
+        p.armT  = 0;
+        p.x     = C_L_X;
+        // p.y stays at cY; arm will lerp from there to DY
+      }
+    } else {
+      // ── Package on A or B belt: move left ───────────────
+      p.x -= spd * dt;
+
+      // Warning flash
+      const distToEnd = p.x - AB_END_X;
+      p.warn = distToEnd < WARN_DIST + PW / 2;
+      if (p.warn) p.warnT += dt; else p.warnT = 0;
+
+      // Transfer / fall at AB_END_X
+      if (p.x - PW / 2 <= AB_END_X) {
+        const cY = G.cAlign === 'A' ? AY : BY;
+        if (cY === p.y) {
+          // Aligned → enter C bridge belt
+          p.lane = 'C';
+          p.onC  = true;
+          p.x    = C_R_X;
+          p.warn = false;
+          p.warnT = 0;
+        } else {
+          // Not aligned → fall
+          loseLife('MISSED!');
+          pkgRemove.add(p.id);
+        }
+      }
+    }
+  }
+  G.pkgs = G.pkgs.filter(p => !pkgRemove.has(p.id));
+
+  // ── Move items in D tunnel ─────────────────────────────────
+  for (const item of G.dItems) {
+    item.elapsed += dt;
+    // Visual x position (lerp from D right to D left)
+    const prog = Math.min(item.elapsed / D_PROC_TIME, 1);
+    item.x = lerp(D_R_X - PW / 2, D_L_X + PW / 2, prog);
+  }
+
+  // Items ready to exit D (elapsed >= proc time AND F is free)
+  if (G.fItem === null && G.dItems.length > 0) {
+    // Check first item in queue
+    const first = G.dItems[0];
+    if (first.elapsed >= D_PROC_TIME) {
+      G.dItems.shift();
+      G.fItem = {
+        id:         first.id,
+        type:       first.type,
+        targetExit: first.targetExit,
+        color:      first.color,
+        hint:       first.hint,
+        progress:   0,   // 0→1 along F chute
+      };
+      // Tutorial: pause when first processed item reaches F
+      if (G.tutState === 'waitProcessed') {
+        G.tutState = 'tutPause';
+        G.tutPauseT = TUT_PAUSE;
+        return;
+      }
+    }
+  }
+
+  // ── Move item in F chute ───────────────────────────────────
+  if (G.fItem) {
+    const tTime = fTravelTime();
+    G.fItem.progress = Math.min(1, G.fItem.progress + dt / tTime);
+    if (G.fItem.progress >= 1) {
+      // Item exits F → enter exit belt (follow current pivot direction)
+      const exit = G.pivot;
+      const fi = G.fItem;
+      G.fItem = null;
+
+      let ex, ey;
+      if (exit === 'G') { ex = PX;           ey = G_ENTRY_Y; }
+      else if (exit === 'H') { ex = H_ENTRY_X;   ey = PY; }
+      else                   { ex = PX;           ey = I_ENTRY_Y; }
+
+      G.exits.push({
+        id: G.uid++,
+        type:       fi.type,
+        targetExit: fi.targetExit,
+        color:      fi.color,
+        exit,
+        x: ex,
+        y: ey,
+      });
+    }
+  }
+
+  // ── Move exit belt items ───────────────────────────────────
+  const exitRemove = new Set();
+  for (const item of G.exits) {
+    if (item.exit === 'G') {
+      item.y -= spd * dt;
+      if (item.y + PH < 0) {
+        if (item.exit === item.targetExit) gainScore();
+        else loseLife('WRONG EXIT!');
+        exitRemove.add(item.id);
+      }
+    } else if (item.exit === 'H') {
+      item.x -= spd * dt;
+      if (item.x + PW < 0) {
+        if (item.exit === item.targetExit) gainScore();
+        else loseLife('WRONG EXIT!');
+        exitRemove.add(item.id);
+      }
+    } else {
+      item.y += spd * dt;
+      if (item.y > CH) {
+        if (item.exit === item.targetExit) gainScore();
+        else loseLife('WRONG EXIT!');
+        exitRemove.add(item.id);
+      }
+    }
+  }
+  G.exits = G.exits.filter(i => !exitRemove.has(i.id));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER HELPERS
+// ═══════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('gc');
+const ctx    = canvas.getContext('2d');
+
+function fillRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+}
+
+function strokeRect(x, y, w, h, color, lw) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw || 1;
+  ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h));
+}
+
+function text(str, x, y, color, size, align, bold) {
+  ctx.fillStyle = color;
+  ctx.font = (bold ? 'bold ' : '') + (size || 12) + 'px "Courier New", monospace';
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(str, Math.round(x), Math.round(y));
+}
+
+function drawPackage(cx, cy, color, flashing, flashT) {
+  if (flashing && Math.floor(flashT / 0.1) % 2 === 0) {
+    ctx.shadowColor = CLR.warn;
+    ctx.shadowBlur = 10;
+  }
+
+  const x = Math.round(cx - PW / 2);
+  const y = Math.round(cy - PH / 2);
+  const depth = 7;   // visible front face depth
+
+  // Front face (below top face, belt-colour then darkened)
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y + PH, PW, depth);
+  ctx.fillStyle = 'rgba(0,0,0,0.50)';
+  ctx.fillRect(x, y + PH, PW, depth);
+  // Shadow at bottom
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(x, y + PH + depth - 1, PW, 2);
+
+  // Top face
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, PW, PH);
+
+  // Highlight lines (top-left corner — simulates isometric top-face lighting)
+  ctx.fillStyle = 'rgba(255,255,255,0.30)';
+  ctx.fillRect(x + 2, y + 2, PW - 4, 3);
+  ctx.fillRect(x + 2, y + 2, 3, PH - 4);
+
+  // Box border
+  ctx.strokeStyle = 'rgba(0,0,0,0.40)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, PW - 1, PH - 1);
+
+  ctx.shadowBlur = 0;
+}
+
+// Draw a belt lane (horizontal) with 3-D depth face
+function drawBeltH(x1, x2, cy, color) {
+  const depth = 9;
+  const rx = Math.round(x1), rw = Math.round(x2 - x1);
+  const rBot = Math.round(cy + BH);
+
+  // Side / front face — belt colour darkened
+  ctx.fillStyle = color;
+  ctx.fillRect(rx, rBot, rw, depth);
+  ctx.fillStyle = 'rgba(0,0,0,0.48)';
+  ctx.fillRect(rx, rBot, rw, depth);
+  // Shadow at foot of depth face
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fillRect(rx, rBot + depth - 1, rw, 2);
+
+  // Belt surface
+  fillRect(x1, cy - BH, x2 - x1, BH * 2, color);
+  // Top highlight
+  fillRect(x1, cy - BH,     x2 - x1, 2, 'rgba(255,255,255,0.16)');
+  // Bottom shadow
+  fillRect(x1, cy + BH - 2, x2 - x1, 2, 'rgba(0,0,0,0.22)');
+
+  // Conveyor tick marks
+  ctx.strokeStyle = 'rgba(0,0,0,0.14)';
+  ctx.lineWidth = 1;
+  const tick = 24;
+  const offset = Math.floor((G.time * beltSpeed() / tick)) % tick;
+  for (let tx = x1 - offset; tx < x2; tx += tick) {
+    if (tx >= x1 && tx <= x2) {
+      ctx.beginPath();
+      ctx.moveTo(Math.round(tx), cy - BH + 4);
+      ctx.lineTo(Math.round(tx), cy + BH - 4);
+      ctx.stroke();
+    }
+  }
+}
+
+// Draw a belt lane (vertical, moving upward = dir -1, downward = +1) with depth
+function drawBeltV(cx, y1, y2, color, dir) {
+  const depth = 9;
+  const rRight = Math.round(cx + BH);
+  const rh = Math.round(y2 - y1);
+
+  // Side / right face — darkened
+  ctx.fillStyle = color;
+  ctx.fillRect(rRight, Math.round(y1), depth, rh);
+  ctx.fillStyle = 'rgba(0,0,0,0.48)';
+  ctx.fillRect(rRight, Math.round(y1), depth, rh);
+  // Shadow at right edge
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fillRect(rRight + depth - 1, Math.round(y1), 2, rh);
+
+  // Belt surface
+  fillRect(cx - BH, y1, BH * 2, y2 - y1, color);
+  // Left highlight
+  fillRect(cx - BH, y1, 2, y2 - y1, 'rgba(255,255,255,0.14)');
+  // Right shadow
+  fillRect(cx + BH - 2, y1, 2, y2 - y1, 'rgba(0,0,0,0.22)');
+
+  // Conveyor tick marks
+  ctx.strokeStyle = 'rgba(0,0,0,0.14)';
+  ctx.lineWidth = 1;
+  const tick = 24;
+  const offset = Math.floor((G.time * beltSpeed() / tick)) % tick;
+  for (let ty = y1 - (dir > 0 ? offset : -offset); ty < y2; ty += tick) {
+    if (ty >= y1 && ty <= y2) {
+      ctx.beginPath();
+      ctx.moveTo(cx - BH + 4, Math.round(ty));
+      ctx.lineTo(cx + BH - 4, Math.round(ty));
+      ctx.stroke();
+    }
+  }
+}
+
+// Draw a gap (filled with bg color so the gap is visible)
+function drawGap(x1, x2, cy, h) {
+  fillRect(x1, cy - h, x2 - x1, h * 2, CLR.bg);
+  // Edge tick marks (dark, visible on light floor)
+  fillRect(x1, cy - 2, 2, 4, 'rgba(0,0,0,0.18)');
+  fillRect(x2 - 2, cy - 2, 2, 4, 'rgba(0,0,0,0.18)');
+}
+
+function drawGapV(cx, y1, y2, w) {
+  fillRect(cx - w, y1, w * 2, y2 - y1, CLR.bg);
+  fillRect(cx - 2, y1, 4, 2, 'rgba(0,0,0,0.18)');
+  fillRect(cx - 2, y2 - 2, 4, 2, 'rgba(0,0,0,0.18)');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MERGER SECTION  (fixed diagonal arms + C bridge belt)
+// ═══════════════════════════════════════════════════════════
+
+function drawMergerArms() {
+  ctx.save();
+  ctx.lineCap  = 'butt';
+  ctx.lineJoin = 'round';   // soft rounded corners at right-angle turns
+
+  // ── Two L-shaped arms: horizontal leg then vertical leg ──
+  for (const src of ['A', 'B']) {
+    const fromY = src === 'A' ? AY : BY;
+    const armRX = C_L_X - C_L_GAP;  // right end of arm (gap before C)
+
+    // Depth shadow — offset (+4, +5)
+    ctx.strokeStyle = 'rgba(0,0,0,0.48)';
+    ctx.lineWidth   = BH * 2 + 12;
+    ctx.beginPath();
+    ctx.moveTo(armRX + 4,    fromY + 5);
+    ctx.lineTo(MERGE_X + 4,  fromY + 5);  // horizontal leg
+    ctx.lineTo(MERGE_X + 4,  DY + 5);     // vertical leg
+    ctx.stroke();
+
+    // Main belt
+    ctx.strokeStyle = CLR.beltC;
+    ctx.lineWidth   = BH * 2;
+    ctx.beginPath();
+    ctx.moveTo(armRX,   fromY);
+    ctx.lineTo(MERGE_X, fromY);   // horizontal leg
+    ctx.lineTo(MERGE_X, DY);      // vertical leg
+    ctx.stroke();
+
+    // Surface highlight
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.moveTo(armRX,   fromY);
+    ctx.lineTo(MERGE_X, fromY);
+    ctx.lineTo(MERGE_X, DY);
+    ctx.stroke();
+  }
+
+  // Merge-point cap where both arms meet PRED
+  const mr = BH + 4;
+  ctx.fillStyle = 'rgba(0,0,0,0.40)';
+  ctx.beginPath(); ctx.arc(MERGE_X + 4, DY + 5, mr, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = CLR.beltC;
+  ctx.beginPath(); ctx.arc(MERGE_X, DY, mr, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(MERGE_X, DY, mr, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.restore();
+
+  // ── C bridge belt (moves between AY and BY) ───────────────
+  const cY = G.cAlign === 'A' ? AY : BY;
+  drawBeltH(C_L_X, C_R_X, cY, CLR.beltC);
+  text('C', (C_L_X + C_R_X) / 2, cY - BH - 10, CLR.dimText, 10, 'center');
+
+  // ── Gap-1: between A/B belt ends and C right edge ─────────
+  drawGap(AB_END_X, C_R_X, AY, BH + 14);
+  drawGap(AB_END_X, C_R_X, BY, BH + 14);
+
+  // ── Gap-2: between arm right ends and C left edge ──────────
+  drawGap(C_L_X - C_L_GAP, C_L_X, AY, BH + 14);
+  drawGap(C_L_X - C_L_GAP, C_L_X, BY, BH + 14);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER — PLAYFIELD
+// ═══════════════════════════════════════════════════════════
+
+function renderField() {
+  // ── Concrete floor ───────────────────────────────────────
+  fillRect(0, 0, CW, CH, CLR.bg);
+  // Subtle tile grid
+  const TILE = 44;
+  ctx.strokeStyle = CLR.floorGrid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let gx = 0; gx <= CW; gx += TILE) { ctx.moveTo(gx + 0.5, 0); ctx.lineTo(gx + 0.5, CH); }
+  for (let gy = 0; gy <= CH; gy += TILE) { ctx.moveTo(0, gy + 0.5); ctx.lineTo(CW, gy + 0.5); }
+  ctx.stroke();
+
+  // ── Exit belts (G/H/I) drawn first (behind pivot) ───────
+  // G (north, sky blue)
+  drawBeltV(PX, 0, G_ENTRY_Y, CLR.beltG, -1);
+  text('G  RESTOCK', PX + BH + 12, 40, CLR.G, 11, 'left', true);
+
+  // H (west, green)
+  drawBeltH(0, H_ENTRY_X, PY, CLR.beltH);
+  text('H  REPAIR', 4, PY - BH - 8, CLR.H, 11, 'left', true);
+
+  // I (south, red)
+  drawBeltV(PX, I_ENTRY_Y, CH, CLR.beltI, 1);
+  text('I  RECYCLE', PX + BH + 12, CH - 40, CLR.I, 11, 'left', true);
+
+  // ── Gap-3: between F tips and exit belt entries ──────────
+  // (gap is covered by pivot circle and F arm, visually clear)
+
+  // ── D processing tunnel ──────────────────────────────────
+  // Tunnel body
+  fillRect(D_L_X, DY - BH - 6, D_LEN, (BH + 6) * 2, CLR.beltD);
+  fillRect(D_L_X, DY - BH - 6, D_LEN, (BH + 6) * 2, CLR.tunnelBg);
+  // Front face of tunnel casing
+  fillRect(D_L_X, DY + BH + 6, D_LEN, 10, CLR.beltD);
+  ctx.fillStyle = 'rgba(0,0,0,0.50)';
+  ctx.fillRect(Math.round(D_L_X), Math.round(DY + BH + 6), Math.round(D_LEN), 10);
+  // Glowing scan-line inside tunnel
+  const glow = 0.35 + 0.15 * Math.sin(G.time * 3.5);
+  ctx.fillStyle = `rgba(60,100,220,${glow})`;
+  ctx.fillRect(Math.round(D_L_X + 4), Math.round(DY - 1), Math.round(D_LEN - 8), 2);
+  // Border
+  strokeRect(D_L_X, DY - BH - 6, D_LEN, (BH + 6) * 2, 'rgba(80,110,200,0.30)', 1);
+  text('PROCESSOR', D_L_X + 8, DY - BH - 16, CLR.dimText, 10, 'left');
+
+  // ── PRED belt (fixed conveyor at DY feeding into D) ──────
+  drawBeltH(PRED_L_X, PRED_R_X, DY, CLR.beltC);
+  text('D  CONVEYOR', PRED_L_X + 8, DY + BH + 22, CLR.dimText, 10, 'left');
+
+  // ── A belt ───────────────────────────────────────────────
+  drawBeltH(AB_END_X, SPAWN_X, AY, CLR.beltA);
+  text('A  STORE RETURNS', AB_END_X + 12, AY - BH - 10, CLR.beltA, 10, 'left');
+
+  // ── B belt ───────────────────────────────────────────────
+  drawBeltH(AB_END_X, SPAWN_X, BY, CLR.beltB);
+  text('B  ONLINE RETURNS', AB_END_X + 12, BY + BH + 22, CLR.beltB, 10, 'left');
+
+  // ── Merger arms + C gate (drawn on top of belt ends) ─────
+  drawMergerArms();
+
+  // ── Pivot E / Chute F ────────────────────────────────────
+  drawPivot();
+
+  // ── D tunnel items ───────────────────────────────────────
+  for (const item of G.dItems) {
+    const prog = Math.min(item.elapsed / D_PROC_TIME, 1);
+    const ix = lerp(D_R_X - PW / 2, D_L_X + PW / 2, prog);
+
+    // Hint highlight
+    if (item.hint) {
+      fillRect(ix - PW / 2 - 4, DY - PH / 2 - 4, PW + 8, PH + 8, CLR.hintBg);
+    }
+    fillRect(ix - PW / 2, DY - PH / 2, PW, PH, item.color);
+    strokeRect(ix - PW / 2, DY - PH / 2, PW, PH, 'rgba(255,255,255,0.4)', 1);
+
+    // Hint: show target exit label inside item
+    if (item.hint) {
+      text(item.targetExit, ix, DY, '#000', 10, 'center', true);
+    }
+  }
+
+  // ── fItem in chute ───────────────────────────────────────
+  if (G.fItem) {
+    const prog = G.fItem.progress;
+    let fx, fy;
+    const piv = G.pivot;
+    if (piv === 'G') { fx = PX;           fy = PY - prog * F_LEN; }
+    else if (piv === 'H') { fx = PX - prog * F_LEN; fy = PY; }
+    else               { fx = PX;           fy = PY + prog * F_LEN; }
+
+    if (G.fItem.hint) {
+      fillRect(fx - PW / 2 - 4, fy - PH / 2 - 4, PW + 8, PH + 8, CLR.hintBg);
+    }
+    fillRect(fx - PW / 2, fy - PH / 2, PW, PH, G.fItem.color);
+    strokeRect(fx - PW / 2, fy - PH / 2, PW, PH, 'rgba(255,255,255,0.4)', 1);
+    if (G.fItem.hint) {
+      text(G.fItem.targetExit, fx, fy, '#000', 10, 'center', true);
+    }
+  }
+
+  // ── Packages on A/B/C ───────────────────────────────────
+  for (const p of G.pkgs) {
+    drawPackage(p.x, p.y, p.color, p.warn, p.warnT);
+    // Control hint if warned and C misaligned
+    if (p.warn) {
+      const cY = G.cAlign === 'A' ? AY : BY;
+      if (cY !== p.y) {
+        const hint = p.src === 'A' ? '[P]' : '[L]';
+        text(hint, p.x, p.y - PH / 2 - 10, CLR.hintHL, 10, 'center', true);
+      }
+    }
+  }
+
+  // ── Exit belt items ──────────────────────────────────────
+  for (const item of G.exits) {
+    fillRect(item.x - PW / 2, item.y - PH / 2, PW, PH, item.color);
+    strokeRect(item.x - PW / 2, item.y - PH / 2, PW, PH, 'rgba(255,255,255,0.3)', 1);
+  }
+}
+
+function drawPivot() {
+  const r = 28;
+
+  // ── Chute arm shadow (offset depth) ─────────────────────
+  ctx.save();
+  ctx.strokeStyle = CLR.pivotSide;
+  ctx.lineWidth = BH * 2;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(PX + 4, PY + 5);
+  if (G.pivot === 'G')      { ctx.lineTo(PX + 4,         PY - F_LEN + 5); }
+  else if (G.pivot === 'H') { ctx.lineTo(PX - F_LEN + 4, PY + 5); }
+  else                       { ctx.lineTo(PX + 4,         PY + F_LEN + 5); }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // ── Chute arm (yellow) ───────────────────────────────────
+  ctx.save();
+  ctx.strokeStyle = CLR.pivot;
+  ctx.lineWidth = BH * 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(PX, PY);
+  if (G.pivot === 'G')      { ctx.lineTo(PX,           PY - F_LEN); }
+  else if (G.pivot === 'H') { ctx.lineTo(PX - F_LEN,   PY); }
+  else                       { ctx.lineTo(PX,           PY + F_LEN); }
+  ctx.stroke();
+  ctx.restore();
+
+  // ── Gap-3: break between chute tip and exit belt ─────────
+  if (G.pivot === 'G') {
+    drawGapV(PX, G_TIP_Y, G_ENTRY_Y, BH + 12);
+  } else if (G.pivot === 'H') {
+    drawGap(H_TIP_X, H_ENTRY_X, PY, BH + 12);
+  } else {
+    drawGapV(PX, I_TIP_Y, I_ENTRY_Y, BH + 12);
+  }
+
+  // ── Pivot platform shadow ────────────────────────────────
+  ctx.beginPath();
+  ctx.arc(PX + 4, PY + 5, r + 3, 0, Math.PI * 2);
+  ctx.fillStyle = CLR.pivotSide;
+  ctx.fill();
+
+  // ── Pivot circle ─────────────────────────────────────────
+  ctx.beginPath();
+  ctx.arc(PX, PY, r, 0, Math.PI * 2);
+  ctx.fillStyle = CLR.pivot;
+  ctx.fill();
+
+  // Caution diagonal stripes (clipped to circle)
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(PX, PY, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 6;
+  for (let i = -r * 2; i < r * 2; i += 14) {
+    ctx.beginPath();
+    ctx.moveTo(PX + i - r, PY - r);
+    ctx.lineTo(PX + i + r, PY + r);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Rim
+  ctx.beginPath();
+  ctx.arc(PX, PY, r, 0, Math.PI * 2);
+  ctx.strokeStyle = CLR.pivotRim;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Direction arrow (dark on yellow)
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.beginPath();
+  if (G.pivot === 'G') {
+    ctx.moveTo(PX, PY - 14); ctx.lineTo(PX - 7, PY + 6); ctx.lineTo(PX + 7, PY + 6);
+  } else if (G.pivot === 'H') {
+    ctx.moveTo(PX - 14, PY); ctx.lineTo(PX + 6, PY - 7); ctx.lineTo(PX + 6, PY + 7);
+  } else {
+    ctx.moveTo(PX, PY + 14); ctx.lineTo(PX - 7, PY - 6); ctx.lineTo(PX + 7, PY - 6);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // Exit label
+  const label  = { G: 'G', H: 'H', I: 'I' }[G.pivot];
+  const lcolor = { G: CLR.G, H: CLR.H, I: CLR.I }[G.pivot];
+  text(label, PX + r + 8, PY, lcolor, 14, 'left', true);
+
+  // D→E connector strip
+  fillRect(PX + r, PY - 3, D_L_X - (PX + r), 6, CLR.beltD);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER — HUD
+// ═══════════════════════════════════════════════════════════
+
+function renderHUD() {
+  // Top bar
+  fillRect(0, 0, CW, 52, 'rgba(8,12,24,0.95)');
+  fillRect(0, 50, CW, 2, 'rgba(200,160,0,0.40)');
+
+  // Lives
+  text('LIVES', 16, 16, CLR.dimText, 10, 'left');
+  for (let i = 0; i < 3; i++) {
+    const alive = i < G.lives;
+    const hx = 16 + i * 22;
+    fillRect(hx, 24, 16, 14, alive ? '#e03030' : '#222233');
+    strokeRect(hx, 24, 16, 14, alive ? '#ff5555' : '#333344', 1);
+  }
+
+  // Score
+  text('SCORE', CW / 2 - 50, 16, CLR.dimText, 10, 'left');
+  text(String(G.score).padStart(5, '0'), CW / 2 - 50, 36, CLR.text, 18, 'left', true);
+
+  // Time
+  const elapsed = Math.floor(G.time);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+  text('TIME', CW / 2 + 30, 16, CLR.dimText, 10, 'left');
+  text(`${mm}:${ss}`, CW / 2 + 30, 36, CLR.text, 16, 'left', true);
+
+  // Controls reference (right side)
+  const cx = CW - 260;
+  text('P/L: divert  Z/X: rotate  ESC: pause', cx, 20, CLR.dimText, 10, 'left');
+  text(`PIVOT → ${G.pivot}   DIVERT → ${G.cAlign}`, cx, 36, CLR.text, 10, 'left');
+
+  // Life flash overlay
+  if (G.lifeFlash > 0) {
+    ctx.globalAlpha = G.lifeFlash * 2.0;
+    fillRect(0, 0, CW, CH, CLR.flash);
+    ctx.globalAlpha = 1;
+    if (G.flashMsg) {
+      text(G.flashMsg, CW / 2, CH / 2 - 30, CLR.warn, 28, 'center', true);
+    }
+  }
+
+  // Score flash
+  if (G.scoreFlash > 0) {
+    ctx.globalAlpha = G.scoreFlash * 1.5;
+    fillRect(0, 0, CW, CH, CLR.correct);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER — HINT PANEL  (next item preview)
+// ═══════════════════════════════════════════════════════════
+
+function renderHints() {
+  if (G.nProcessed >= HINT_LIMIT) return;
+  // Find the first item in D that has a hint
+  const first = G.dItems.find(i => i.hint) || (G.fItem && G.fItem.hint ? G.fItem : null);
+  if (!first) return;
+
+  const px2 = CW - 10, py2 = 70;
+  const bw = 140, bh = 54;
+  fillRect(px2 - bw, py2, bw, bh, 'rgba(20,30,50,0.9)');
+  strokeRect(px2 - bw, py2, bw, bh, CLR.hintHL, 1);
+  text('NEXT ITEM', px2 - bw / 2, py2 + 14, CLR.hintHL, 10, 'center', true);
+
+  const meta = TYPE_META[first.type];
+  fillRect(px2 - bw / 2 - 20, py2 + 26, 40, 18, first.color);
+  text(first.type, px2 - bw / 2 + 26, py2 + 36, first.color, 11, 'left', true);
+
+  // Highlight correct exit label
+  const exitLabels = { G: { x: PX + BH + 12, y: 40 }, H: { x: 4, y: PY - BH - 8 }, I: { x: PX + BH + 12, y: CH - 40 } };
+  const el = exitLabels[first.targetExit];
+  ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(G.time * 4));
+  fillRect(el.x - 2, el.y - 8, 80, 18, CLR.hintBg);
+  ctx.globalAlpha = 1;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER — OVERLAY SCREENS
+// ═══════════════════════════════════════════════════════════
+
+function renderTitle() {
+  // Concrete floor
+  fillRect(0, 0, CW, CH, CLR.bg);
+  const TILE = 44;
+  ctx.strokeStyle = CLR.floorGrid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let gx = 0; gx <= CW; gx += TILE) { ctx.moveTo(gx + 0.5, 0); ctx.lineTo(gx + 0.5, CH); }
+  for (let gy = 0; gy <= CH; gy += TILE) { ctx.moveTo(0, gy + 0.5); ctx.lineTo(CW, gy + 0.5); }
+  ctx.stroke();
+
+  // Belt sketch preview (ghosted)
+  ctx.globalAlpha = 0.40;
+  fillRect(AB_END_X, AY - BH, SPAWN_X - AB_END_X, BH * 2, CLR.beltA);
+  fillRect(AB_END_X, BY - BH, SPAWN_X - AB_END_X, BH * 2, CLR.beltB);
+  fillRect(PRED_L_X, DY - BH, PRED_LEN, BH * 2, CLR.beltC);
+  fillRect(D_L_X, DY - BH, D_LEN, BH * 2, CLR.beltD);
+  fillRect(0, PY - BH, H_ENTRY_X, BH * 2, CLR.beltH);
+  fillRect(PX - BH, 0, BH * 2, G_ENTRY_Y, CLR.beltG);
+  fillRect(PX - BH, I_ENTRY_Y, BH * 2, CH - I_ENTRY_Y, CLR.beltI);
+  // Merger arms (ghosted sketch — straight diagonal)
+  ctx.lineCap = 'round';
+  for (const [fromY, color] of [[AY, CLR.beltA], [BY, CLR.beltB]]) {
+    ctx.strokeStyle = color; ctx.lineWidth = BH * 2;
+    ctx.beginPath(); ctx.moveTo(C_L_X, fromY); ctx.lineTo(MERGE_X, DY);
+    ctx.stroke();
+  }
+  // Pivot
+  ctx.beginPath(); ctx.arc(PX, PY, 28, 0, Math.PI * 2);
+  ctx.fillStyle = CLR.pivot; ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Title panel
+  ctx.fillStyle = 'rgba(8,12,22,0.92)';
+  ctx.fillRect(CW / 2 - 260, CH / 2 - 140, 520, 280);
+  strokeRect(CW / 2 - 260, CH / 2 - 140, 520, 280, 'rgba(200,160,0,0.50)', 2);
+
+  text('RETURNS PROCESSOR', CW / 2, CH / 2 - 96, CLR.pivotRim, 28, 'center', true);
+  text('────────────────────────────────', CW / 2, CH / 2 - 64, CLR.dimText, 11, 'center');
+
+  text('Route returned items to the correct exit.', CW / 2, CH / 2 - 36, CLR.text, 13, 'center');
+  text('Miss or misroute — lose a life.', CW / 2, CH / 2 - 14, CLR.text, 13, 'center');
+
+  const pad = CW / 2 - 180;
+  text('P / L    divert belt C to A or B', pad, CH / 2 + 20, CLR.dimText, 12, 'left');
+  text('Z / X    rotate exit G → H → I',  pad, CH / 2 + 40, CLR.dimText, 12, 'left');
+  text('ESC      pause / unpause',          pad, CH / 2 + 60, CLR.dimText, 12, 'left');
+
+  const blink = Math.floor(performance.now() / 550) % 2 === 0;
+  if (blink) text('PRESS ANY KEY TO START', CW / 2, CH / 2 + 100, CLR.hintHL, 15, 'center', true);
+}
+
+function renderGameOver() {
+  ctx.globalAlpha = 0.6;
+  fillRect(0, 0, CW, CH, '#000');
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = 'rgba(10,16,32,0.95)';
+  ctx.fillRect(CW / 2 - 200, CH / 2 - 100, 400, 200);
+  strokeRect(CW / 2 - 200, CH / 2 - 100, 400, 200, CLR.I, 2);
+
+  text('GAME OVER', CW / 2, CH / 2 - 55, CLR.I, 32, 'center', true);
+  text(`FINAL SCORE: ${G.score}`, CW / 2, CH / 2 - 4, CLR.text, 18, 'center', true);
+
+  const blink = Math.floor(performance.now() / 550) % 2 === 0;
+  if (blink) text('PRESS ANY KEY TO RESTART', CW / 2, CH / 2 + 55, CLR.hintHL, 13, 'center', true);
+}
+
+function renderTutorialOverlay() {
+  if (G.tutState === 'tutPause') {
+    // Show Z/X prompt while paused at E/F
+    ctx.fillStyle = 'rgba(10,16,32,0.75)';
+    ctx.fillRect(PX - 120, PY - 80, 240, 60);
+    strokeRect(PX - 120, PY - 80, 240, 60, CLR.hintHL, 1);
+    text('Z / X  to route the item!', PX, PY - 50, CLR.hintHL, 12, 'center', true);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER — PAUSE OVERLAY
+// ═══════════════════════════════════════════════════════════
+
+function renderPause() {
+  ctx.globalAlpha = 0.55;
+  fillRect(0, 0, CW, CH, '#000');
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = 'rgba(10,16,32,0.96)';
+  ctx.fillRect(CW / 2 - 160, CH / 2 - 70, 320, 140);
+  strokeRect(CW / 2 - 160, CH / 2 - 70, 320, 140, 'rgba(100,140,220,0.5)', 2);
+
+  text('PAUSED', CW / 2, CH / 2 - 26, CLR.hintHL, 28, 'center', true);
+  text('ESC to resume', CW / 2, CH / 2 + 22, CLR.dimText, 13, 'center');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER — MASTER
+// ═══════════════════════════════════════════════════════════
+
+function render() {
+  if (G.phase === 'title') {
+    renderTitle();
+    renderHUD();  // just for the time ticker on title
+    return;
+  }
+
+  renderField();
+  renderHints();
+  renderHUD();
+
+  if (G.phase === 'gameover') renderGameOver();
+  if (G.phase === 'playing') {
+    if (G.paused) renderPause();
+    else renderTutorialOverlay();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════════════════
+
+const KEYS = new Set();
+
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;  // ignore browser key-repeat
+  const k = e.key.toLowerCase();
+
+  if (G.phase === 'title') {
+    startGame();
+    return;
+  }
+
+  if (G.phase === 'gameover') {
+    initState();
+    G.phase = 'playing';
+    G.tutState = 'waitFirstPkg';
+    return;
+  }
+
+  // Pause toggle (works during play and from pause)
+  if (e.key === 'Escape' && G.phase === 'playing') {
+    G.paused = !G.paused;
+    return;
+  }
+
+  if (G.paused) return;   // ignore other keys while paused
+
+  // During game
+  switch (k) {
+    case 'p':
+      if (G.plCD <= 0 && G.cAlign !== 'A') {
+        G.cAlign = 'A';
+        G.plCD = PL_CD_TIME;
+      }
+      break;
+    case 'l':
+      if (G.plCD <= 0 && G.cAlign !== 'B') {
+        G.cAlign = 'B';
+        G.plCD = PL_CD_TIME;
+      }
+      break;
+    case 'z':
+      if (G.rotCD <= 0) {
+        const seqZ = ['G', 'H', 'I'];
+        G.pivot = seqZ[(seqZ.indexOf(G.pivot) + 1) % 3];
+        G.rotCD = ROT_CD_TIME;
+      }
+      break;
+    case 'x':
+      if (G.rotCD <= 0) {
+        const seqX = ['G', 'H', 'I'];
+        G.pivot = seqX[(seqX.indexOf(G.pivot) + 2) % 3];
+        G.rotCD = ROT_CD_TIME;
+      }
+      break;
+  }
+});
+
+function startGame() {
+  initState();
+  G.phase = 'playing';
+  G.tutState = 'waitFirstPkg';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════════════════
+
+let lastTime = null;
+
+function loop(ts) {
+  if (lastTime === null) lastTime = ts;
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);  // cap at 50ms
+  lastTime = ts;
+
+  update(dt);
+  render();
+
+  requestAnimationFrame(loop);
+}
+
+// ── Boot ─────────────────────────────────────────────────
+initState();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
